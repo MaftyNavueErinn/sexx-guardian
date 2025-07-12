@@ -9,8 +9,9 @@ import requests
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+# 테스트용 토큰 & 채팅 ID (하드코딩)
+TELEGRAM_BOT_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+TELEGRAM_CHAT_ID = "7733010521"
 
 # 테스트용 종목 (TSLA)
 TICKER = "TSLA"
@@ -18,18 +19,20 @@ TICKER = "TSLA"
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    requests.post(url, data=data)
+    response = requests.post(url, data=data)
+    print("텔레그램 응답:", response.status_code, response.text)
 
 def check_rsi_and_alert():
+    print("✅ check_rsi_and_alert() 실행됨")
     df = yf.download(TICKER, period="20d", interval="1d", progress=False)
 
     if df.empty:
-        print("데이터가 없습니다.")
+        print("❌ 데이터가 없습니다.")
         return
 
     close = df["Close"]
     if len(close.shape) > 1:
-        close = close.squeeze()  # (20,1) 형태일 경우 1D로 변환
+        close = close.squeeze()
 
     ma20 = close.rolling(window=20).mean()
     try:
@@ -41,17 +44,14 @@ def check_rsi_and_alert():
     current_price = close.iloc[-1]
     current_ma20 = ma20.iloc[-1]
 
-    message = f"[알림] {TICKER}\nRSI: {rsi:.2f} | 종가: {current_price:.2f} | MA20: {current_ma20:.2f}"
-    print(message)
+    print(f"[{TICKER}] RSI: {rsi:.2f}, 종가: {current_price:.2f}, MA20: {current_ma20:.2f}")
 
-    # 타점 조건
-    if rsi < 35 and current_price < current_ma20:
-        send_telegram_alert(f"📉 [{TICKER}] RSI < 35 & 종가 < MA20 진입 타점!")
-    elif rsi > 65 and current_price > current_ma20:
-        send_telegram_alert(f"🚀 [{TICKER}] RSI > 65 & 종가 > MA20 익절 타점!")
+    # 💥 테스트용: 조건 무시하고 무조건 알람
+    send_telegram_alert(f"[TEST] RSI 강제 트리거\n{TICKER} - RSI: {rsi:.2f} | 종가: {current_price:.2f} | MA20: {current_ma20:.2f}")
 
 @app.route("/ping")
 def ping():
+    print("🚨 /ping 호출됨")
     check_rsi_and_alert()
     return "Ping received and RSI checked!"
 
