@@ -1,4 +1,4 @@
-yfinance
-requests
-pytz
-flask
+yfinance>=0.2.36  
+requests>=2.30.0  
+pytz>=2024.1  
+flask>=2.3.0  
