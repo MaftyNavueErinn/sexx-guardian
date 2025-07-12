@@ -1,99 +1,111 @@
+from datetime import datetime
 import requests
 import yfinance as yf
 import pandas as pd
-from flask import Flask
-from datetime import datetime
+from flask import Flask, jsonify
+import pytz
 
 app = Flask(__name__)
 
-# 니가 박으라 했던 고정값
+# ====== 🔧 설정 ======
 TD_API = "5ccea133825e4496869229edbbfcc2a2"
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
-
-SEXX_LIST = [
+WATCHLIST = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO",
-    "GOOGL", "PSTG", "SYM", "TSMC", "ASML", "AMD", "ARM"
+    "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-def send_alert(message):
+# 알림 내역 캐시 (중복 방지)
+notified_today = set()
+
+# ====== 📩 텔레그램 전송 ======
+def send_telegram_alert(msg):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {
-        "chat_id": TG_CHAT_ID,
-        "text": message
-    }
+    payload = {"chat_id": TG_CHAT_ID, "text": msg}
     try:
-        requests.post(url, data=data)
-    except:
-        print("🚨 텔레그램 전송 실패")
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"⚠️ 텔레그램 전송 실패: {e}")
 
-def get_tech_indicators(df):
-    close = df["Close"]
-    delta = close.diff()
+# ====== 📊 종목 데이터 분석 ======
+def check_stock_conditions():
+    now_kst = datetime.now(pytz.timezone("Asia/Seoul")).strftime('%Y-%m-%d %H:%M:%S')
+    alerts = []
+    
+    for symbol in WATCHLIST:
+        try:
+            df = yf.download(symbol, period="20d", interval="1d", progress=False)
+            df.dropna(inplace=True)
+            if len(df) < 15:
+                continue
 
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
+            close = df['Close'].iloc[-1]
+            volume = df['Volume'].iloc[-1]
+            ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
+            ma60 = df['Close'].rolling(window=60, min_periods=1).mean().iloc[-1]
+            rsi = compute_rsi(df['Close'], 14).iloc[-1]
+            bb_upper, bb_lower = compute_bollinger_bands(df['Close'])
+            candle_today = df.iloc[-1]
+            candle_prev = df.iloc[-2]
+            candle_type = "🔺상승" if candle_today["Close"] > candle_today["Open"] else "🔻하락"
+
+            cond_rsi = rsi < 35
+            cond_ma20 = close > ma20
+            cond_bb_break = close < bb_lower or close > bb_upper
+            cond_volume_surge = volume > df['Volume'].rolling(window=10).mean().iloc[-1] * 1.8
+            cond_candle_engulf = candle_today['Close'] > candle_prev['Open'] and candle_today['Open'] < candle_prev['Close']
+
+            conditions = [
+                ("📉 RSI < 35", cond_rsi),
+                ("📈 종가 > MA20", cond_ma20),
+                ("💥 볼린저밴드 돌파", cond_bb_break),
+                ("📊 거래량 급증", cond_volume_surge),
+                ("🕯️ 양봉포획", cond_candle_engulf)
+            ]
+
+            passed = [text for text, ok in conditions if ok]
+            if passed and symbol not in notified_today:
+                alert = f"🚨 [{now_kst}]\n{symbol} 알림 발생!\n\n" + "\n".join(passed) + f"\n📌 종가: {round(close, 2)} / MA20: {round(ma20, 2)} / RSI: {round(rsi, 1)}"
+                alerts.append(alert)
+                notified_today.add(symbol)
+        except Exception as e:
+            print(f"[{symbol}] 오류 발생: {e}")
+    
+    for msg in alerts:
+        send_telegram_alert(msg)
+
+# ====== 📈 RSI 계산 ======
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    avg_gain = up.rolling(window=period).mean()
+    avg_loss = down.rolling(window=period).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(0)
 
-    ma20 = close.rolling(window=20).mean()
-    std20 = close.rolling(window=20).std()
-    lower_band = ma20 - 2 * std20
+# ====== 📉 볼린저밴드 계산 ======
+def compute_bollinger_bands(series, window=20, num_std=2):
+    ma = series.rolling(window=window).mean()
+    std = series.rolling(window=window).std()
+    upper_band = ma + num_std * std
+    lower_band = ma - num_std * std
+    return upper_band.iloc[-1], lower_band.iloc[-1]
 
-    macd = close.ewm(span=12).mean() - close.ewm(span=26).mean()
-    signal = macd.ewm(span=9).mean()
-
-    volume = df["Volume"]
-    vol_ma5 = volume.rolling(window=5).mean()
-
-    return {
-        "rsi": rsi.iloc[-1],
-        "close": close.iloc[-1],
-        "ma20": ma20.iloc[-1],
-        "lower_band": lower_band.iloc[-1],
-        "macd": macd.iloc[-1],
-        "signal": signal.iloc[-1],
-        "volume": volume.iloc[-1],
-        "vol_ma5": vol_ma5.iloc[-1],
-    }
-
-def check_tickers():
-    alert_msgs = []
-    for ticker in SEXX_LIST:
-        df = yf.download(ticker, period="20d", interval="1d", progress=False)
-        if df.empty or len(df) < 20:
-            continue
-
-        indi = get_tech_indicators(df)
-        reasons = []
-
-        if indi["rsi"] < 35:
-            reasons.append(f"RSI {indi['rsi']:.1f}")
-        if indi["close"] > indi["ma20"]:
-            reasons.append(f"MA20 돌파 ({indi['close']:.2f} > {indi['ma20']:.2f})")
-        if indi["close"] < indi["lower_band"]:
-            reasons.append("볼밴 하단 이탈")
-        if indi["macd"] > indi["signal"]:
-            reasons.append("MACD 골든크로스")
-        if indi["volume"] > indi["vol_ma5"] * 1.5:
-            reasons.append("거래량 급등")
-
-        if reasons:
-            alert_msgs.append(f"📈 [{ticker}] 조건 감지: " + ", ".join(reasons))
-
-    if alert_msgs:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        full_msg = f"🚨 감시 트리거 발생 ({timestamp})\n\n" + "\n".join(alert_msgs)
-        send_alert(full_msg)
-    else:
-        print("조건 만족 없음")
-
-@app.route("/ping", methods=["GET"])
+# ====== 🔁 핑 URL 감시 루틴 ======
+@app.route("/ping", methods=["GET", "HEAD"])
 def ping():
-    check_tickers()
-    return "pong", 200
+    check_stock_conditions()
+    return jsonify({"status": "ok"})
 
+# ====== 🌐 메인 엔드포인트 ======
+@app.route("/")
+def root():
+    return "✅ SEXX GUARDIAN ACTIVE"
+
+# ====== 🚀 실행 ======
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000)
+
