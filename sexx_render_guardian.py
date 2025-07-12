@@ -1,92 +1,69 @@
+import os
+
+# Create the modified Python script content with the provided API and Telegram credentials
+script_content = f"""
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import datetime
-import time
-import pytz
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
+import datetime
+from pytz import timezone
+from ta.momentum import RSIIndicator
+from telegram import Bot
+from apscheduler.schedulers.blocking import BlockingScheduler
 
-# ✅ 텔레그램 봇 설정 (직접 박아넣음)
-TOKEN = '6202697932:AAGFi2qgQlMlq_zc4ShWMoVRAJHZHRSUpco'
-CHAT_ID = '-1002182411738'
+# Telegram API
+TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+TG_CHAT_ID = "7733010521"
+bot = Bot(token=TG_TOKEN)
 
-# ✅ 감시할 종목 목록 (쎆쓰)
-TICKERS = [
-    'TSLA', 'ORCL', 'MSFT', 'AMZN', 'NVDA', 'META', 'AAPL', 'AVGO',
-    'GOOGL', 'PSTG', 'SYM', 'TSM', 'ASML', 'AMD', 'ARM'
-]
+# 감시할 종목들
+tickers = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
 
-# ✅ RSI 계산 함수
-def calculate_rsi(data, period=14):
-    delta = data['Close'].diff()
-    gain = delta.clip(lower=0).rolling(window=period).mean()
-    loss = -delta.clip(upper=0).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+# 트리거 기준
+RSI_THRESHOLD = 40
 
-# ✅ 종목 조건 체크
-def check_conditions(ticker):
+def fetch_stock_data(ticker):
     try:
         df = yf.download(ticker, period="20d", interval="1d", progress=False)
         df.dropna(inplace=True)
-
-        if len(df) < 20:
-            return f"⛔ 데이터 부족: {ticker}"
-
-        df['ma20'] = df['Close'].rolling(window=20).mean()
-        df['rsi'] = calculate_rsi(df)
-
-        close = df['Close'].iloc[-1]
-        ma20 = df['ma20'].iloc[-1]
-        rsi = df['rsi'].iloc[-1]
-
-        alert_msg = f"📈 <b>{ticker}</b> 조건 도달\n"
-        triggered = False
-
-        if pd.notna(rsi) and rsi < 40:
-            alert_msg += f"- RSI < 40 (현재: {rsi:.2f})\n"
-            triggered = True
-        if pd.notna(ma20) and close > ma20:
-            alert_msg += f"- 종가 > MA20 (Close: {close:.2f} > MA20: {ma20:.2f})\n"
-            triggered = True
-
-        return alert_msg if triggered else None
-
+        df["RSI"] = RSIIndicator(close=df["Close"]).rsi()
+        df["MA20"] = df["Close"].rolling(window=20).mean()
+        df["MA60"] = df["Close"].rolling(window=60).mean()
+        return df
     except Exception as e:
-        return f"❌ 분석 실패: {ticker}\n에러: {str(e)}"
+        return str(e)
 
-# ✅ 텔레그램 전송
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print(f"텔레그램 전송 실패: {e}")
+def analyze_and_alert():
+    for ticker in tickers:
+        try:
+            df = fetch_stock_data(ticker)
+            if isinstance(df, str):
+                bot.send_message(chat_id=TG_CHAT_ID, text=f"❌ 분석 실패: {ticker}\\n에러: {df}")
+                continue
 
-# ✅ 감시 루프
-def monitor_stocks():
-    now = datetime.datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"⏰ [{now}] 감시 실행")
-    for ticker in TICKERS:
-        result = check_conditions(ticker)
-        if result:
-            send_telegram_message(result)
+            rsi_latest = df["RSI"].iloc[-1]
+            close_latest = df["Close"].iloc[-1]
+            ma20_latest = df["MA20"].iloc[-1]
 
-# ✅ 스케줄러
-scheduler = BackgroundScheduler(timezone='Asia/Seoul')
-scheduler.add_job(monitor_stocks, 'interval', hours=1)
+            condition_rsi = rsi_latest < RSI_THRESHOLD
+            condition_ma20_cross = close_latest > ma20_latest
+
+            if condition_rsi or condition_ma20_cross:
+                msg = f"🚨 [{ticker}] 트리거 감지됨\\n종가: {close_latest:.2f}\\nRSI: {rsi_latest:.2f}\\nMA20: {ma20_latest:.2f}"
+                bot.send_message(chat_id=TG_CHAT_ID, text=msg)
+        except Exception as e:
+            bot.send_message(chat_id=TG_CHAT_ID, text=f"❌ 분석 실패: {ticker}\\n에러: {str(e)}")
+
+# 스케줄러 실행
+scheduler = BlockingScheduler(timezone=timezone("Asia/Seoul"))
+scheduler.add_job(analyze_and_alert, 'interval', hours=1)
 scheduler.start()
+"""
 
-# ✅ 실행
-print("🔥 주식 감시 시스템 작동 시작 (쎆쓰 전 종목 모니터링 중)...")
-try:
-    while True:
-        time.sleep(3600)
-except (KeyboardInterrupt, SystemExit):
-    scheduler.shutdown()
+# Save the script as a .py file
+file_path = "/mnt/data/sexx_render_guardian.py"
+with open(file_path, "w", encoding="utf-8") as f:
+    f.write(script_content)
+
+file_path
