@@ -5,17 +5,14 @@ import yfinance as yf
 from datetime import datetime
 from pytz import timezone
 
-# ✅ 텔레그램 알림 설정
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
 
-# ✅ 감시 종목 (쎆쓰 목록)
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-# ✅ RSI 계산
 def get_rsi(df, period=14):
     delta = df['Close'].diff()
     gain = delta.where(delta > 0, 0)
@@ -26,7 +23,6 @@ def get_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ✅ 텔레그램 메시지 전송
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     data = {"chat_id": TG_CHAT_ID, "text": message}
@@ -36,7 +32,6 @@ def send_telegram_message(message):
     except Exception as e:
         print("❌ 텔레그램 전송 실패:", e)
 
-# ✅ 종목 분석
 def analyze_ticker(ticker):
     try:
         df = yf.download(ticker, period="90d", interval="1d", progress=False)
@@ -57,11 +52,10 @@ def analyze_ticker(ticker):
         volume_prev = df['Volume'].iloc[-2]
         volume_signal = volume > volume_prev * 1.5
 
-        # ✅ OBV 계산 (패치된 부분)
+        # ✅ OBV 계산 (에러 방지용 수정)
         change = df['Close'].diff()
-        obv = df['Volume'].copy()
-        obv.loc[change < 0] *= -1
-        obv = obv.cumsum().iloc[-1]
+        obv_series = df['Volume'].where(change >= 0, -df['Volume'])
+        obv = obv_series.cumsum().iloc[-1]
 
         signals = []
 
@@ -86,7 +80,6 @@ def analyze_ticker(ticker):
         print(f"❌ 분석 실패 - {ticker}: {e}")
         send_telegram_message(f"❌ 분석 실패: {ticker}\n에러: {e}")
 
-# ✅ 감시 루프
 def main_loop():
     while True:
         now_kst = datetime.now(timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
