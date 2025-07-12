@@ -50,9 +50,9 @@ def analyze_ticker(ticker):
 
         volume = df['Volume'].iloc[-1]
         volume_prev = df['Volume'].iloc[-2]
-        volume_signal = volume > volume_prev * 1.5
+        volume_signal = bool(volume > volume_prev * 1.5)  # 💥 에러 패치 핵심
 
-        # ✅ OBV 계산 (에러 방지용 수정)
+        # ✅ OBV 계산 (에러 방지형)
         change = df['Close'].diff()
         obv_series = df['Volume'].where(change >= 0, -df['Volume'])
         obv = obv_series.cumsum().iloc[-1]
