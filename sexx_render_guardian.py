@@ -16,29 +16,19 @@ TICKERS = [
 
 RSI_THRESHOLD = 40
 
-# Max Pain 수동 등록
 MAX_PAIN = {
-    "TSLA": 310,
-    "ORCL": 225,
-    "MSFT": 490,
-    "AMZN": 215,
-    "NVDA": 160,
-    "META": 700,
-    "AAPL": 200,
-    "AVGO": 265,
-    "GOOGL": 177.5,
-    "PSTG": 55,
-    "SYM": 43,
-    "TSM": 225,
-    "ASML": 790,
-    "AMD": 140,
-    "ARM": 145
+    "TSLA": 310, "ORCL": 225, "MSFT": 490, "AMZN": 215, "NVDA": 160,
+    "META": 700, "AAPL": 200, "AVGO": 265, "GOOGL": 177.5, "PSTG": 55,
+    "SYM": 43, "TSM": 225, "ASML": 790, "AMD": 140, "ARM": 145
 }
 
-# 텔레그램 알림 설정
+# 💬 텔레그램 토큰/챗ID 직접 박음
+BOT_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+CHAT_ID = "7733010521"
+
 def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot<YOUR_TOKEN>/sendMessage"
-    payload = {"chat_id": "<YOUR_CHAT_ID>", "text": text}
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
     try:
         response = requests.post(url, json=payload)
         if not response.ok:
@@ -62,7 +52,7 @@ def check_tickers():
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
             if df.empty or len(df) < 20:
-                raise ValueError("Not enough data")
+                raise ValueError("데이터 부족")
 
             close = df['Close']
             rsi_series = get_rsi(close)
@@ -74,7 +64,7 @@ def check_tickers():
             if np.isnan(rsi) or np.isnan(ma20):
                 raise ValueError("RSI or MA20 is NaN")
 
-            mp = MAX_PAIN.get(ticker, None)
+            mp = MAX_PAIN.get(ticker)
             mp_str = f" | MaxPain: {mp}" if mp else ""
 
             if rsi < RSI_THRESHOLD or close_price > ma20:
@@ -88,22 +78,4 @@ def check_tickers():
             messages.append(f"⚠️ {ticker} 에러: {str(e)}")
     return messages
 
-@app.route('/ping')
-def ping():
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"⏰ Ping 수신됨: {now}")
-    send_telegram_message(f"🚀 Ping 수신됨: {now}")
-
-    results = check_tickers()
-    if results:
-        for msg in results:
-            print(msg)
-            send_telegram_message(msg)
-    else:
-        send_telegram_message("😶 감지된 종목 없음 (RSI < 40 or MA20 돌파 없음)")
-
-    return "Ping OK\n"
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    app.run(host='0.0.0.0', port=10000)
+@app.route('/ping'
