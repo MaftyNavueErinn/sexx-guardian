@@ -104,7 +104,7 @@ def check_conditions(symbol):
         alerts.append("🟢 MACD 골든크로스")
 
     if alerts:
-        full_msg = msg + "
+full_msg = msg + "\n✅ 감시 완료: 주가 조건 충족됨!"
 🚨 진입 신호 감지:
 " + "
 ".join(alerts)
