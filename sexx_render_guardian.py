@@ -1,7 +1,8 @@
 from pathlib import Path
 
-# 전체 코드 문자열
-rsi_only_script = '''
+file_path = "/mnt/data/sexx_render_guardian_rsi_only.py"
+
+rsi_only_script = """
 import os
 import yfinance as yf
 import ta
@@ -41,14 +42,14 @@ def check_alerts():
             close = latest["Close"]
 
             if rsi < 60:
-                send_telegram_message(f"📉 <b>{ticker}</b> RSI 진입타점 감지!\nRSI: {rsi:.2f} / 종가: ${close:.2f}")
+                send_telegram_message(f"🚨 {ticker} RSI < 60 진입타점 감지됨! RSI={rsi:.2f}, 종가={close:.2f}")
 
         except Exception as e:
             print(f"{ticker} 에러 발생: {e}")
 
 @app.route('/')
 def home():
-    return "Hello from RSI Guardian"
+    return "Hello from Guardian"
 
 @app.route('/ping')
 def ping():
@@ -58,10 +59,7 @@ def ping():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-'''
+"""
 
-# 파일 저장
-file_path = "/mnt/data/sexx_render_guardian_rsi_only.py"
 Path(file_path).write_text(rsi_only_script)
-
 file_path
