@@ -1,16 +1,6 @@
-# Create a requirements.txt based on the libraries used in the previous code
-requirements = """
 flask
 yfinance
 pandas
 numpy
 requests
 APScheduler
-"""
-
-# Save to file
-file_path = "/mnt/data/requirements.txt"
-with open(file_path, "w") as f:
-    f.write(requirements.strip())
-
-file_path
