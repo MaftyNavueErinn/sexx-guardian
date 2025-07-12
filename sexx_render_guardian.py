@@ -1,4 +1,3 @@
-# 수정된 버전을 생성하여 저장
 corrected_code = """
 import time
 import yfinance as yf
@@ -38,12 +37,9 @@ MAX_PAIN = {
 }
 
 # 텔레그램 알림 설정
-TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-TG_CHAT_ID = "7733010521"
-
 def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": TG_CHAT_ID, "text": text}
+    url = f"https://api.telegram.org/bot<YOUR_TOKEN>/sendMessage"
+    payload = {"chat_id": "<YOUR_CHAT_ID>", "text": text}
     try:
         response = requests.post(url, json=payload)
         if not response.ok:
