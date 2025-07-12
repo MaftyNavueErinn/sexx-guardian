@@ -13,8 +13,10 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
+# ✅ 테스트 모드 ON
+TEST_FORCE_ALERT = True
+
 def get_max_pain_placeholder(ticker):
-    # 🔧 실제 옵션 수급 API가 없으므로 Placeholder
     dummy_max_pain = {
         "TSLA": 315, "ORCL": 130, "MSFT": 440, "AMZN": 185,
         "NVDA": 120, "META": 500, "AAPL": 200, "AVGO": 270,
@@ -49,12 +51,12 @@ def check_all_rsi():
 
             print(f"[{ticker}] RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}")
 
-            # 🎯 RSI 40 이하 조건 감지
-            if rsi <= 40:
+            # 💥 테스트 모드: 무조건 알람 보냄
+            if TEST_FORCE_ALERT or rsi <= 40:
                 max_pain = get_max_pain_placeholder(ticker)
                 msg = (
-                    f"⚠️ [{ticker}] 진입 타점 감지 (RSI ≤ 40)\n"
-                    f"RSI: {rsi:.2f}\n종가: {price:.2f}\nMA20: {ma20:.2f}\n"
+                    f"[TEST] 📡 {ticker} 알람 테스트\n"
+                    f"RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}\n"
                     f"Max Pain: {max_pain}"
                 )
                 send_telegram_alert(msg)
