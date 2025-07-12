@@ -59,30 +59,33 @@ def analyze_ticker(ticker):
         signals = []
 
         if rsi < 40 and close < ma20:
-            signals.append("📉 매수 조건(RSI<40 & 종가<MA20)")
+            signals.append("📉 [매수] RSI<40 & 종가<MA20")
         if rsi > 65 and close > ma20:
-            signals.append("🚨 매도 조건(RSI>65 & 종가>MA20)")
+            signals.append("🚨 [매도] RSI>65 & 종가>MA20")
         if close > ma60:
-            signals.append("↗️ MA60 돌파 (추세 전환)")
+            signals.append("↗️ 추세 전환: MA60 돌파")
         if close < bb_lower:
-            signals.append("🧨 볼린저밴드 하단 이탈")
+            signals.append("🧨 볼밴 하단 이탈 (과매도 경고)")
         if volume_signal:
-            signals.append("🔥 거래량 급등")
+            signals.append(f"🔥 거래량 급등: 전일대비 {volume / volume_prev:.1f}배")
 
         if signals:
-            msg = f"[{ticker}] 시그널 발생\n" \
-                  f"종가: {close:.2f}\nRSI: {rsi:.2f}\nMA20: {ma20:.2f}, MA60: {ma60:.2f}\n" \
-                  + "\n".join(signals)
+            msg = f"📡 [{ticker}] 트레이딩 시그널 감지\n" \
+                  f"📍종가: ${close:.2f}\n📈 RSI: {rsi:.2f}\n" \
+                  f"MA20: {ma20:.2f}, MA60: {ma60:.2f}\n\n" + "\n".join(signals)
             send_telegram_message(msg)
+            print(f"✅ {ticker} 시그널 전송 완료")
 
     except Exception as e:
-        print(f"❌ 분석 실패 - {ticker}: {e}")
-        send_telegram_message(f"❌ 분석 실패: {ticker}\n에러: {e}")
+        err_msg = f"❌ 분석 실패: {ticker}\n에러: {str(e)}"
+        print(err_msg)
+        send_telegram_message(err_msg)
 
 def main_loop():
     while True:
         now_kst = datetime.now(timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
-        send_telegram_message(f"⏱️ 자동감시 작동 중: {now_kst}")
+        send_telegram_message(f"🕐 [감시 시작] {now_kst} 기준 자동 트레이딩 감시 시작")
+        print(f"📌 {now_kst} 기준 감시 시작")
         for ticker in TICKERS:
             analyze_ticker(ticker)
         time.sleep(3600)
