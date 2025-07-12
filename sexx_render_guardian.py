@@ -1,3 +1,4 @@
+
 import requests
 import time
 import numpy as np
@@ -103,7 +104,10 @@ def check_conditions(symbol):
         alerts.append("🟢 MACD 골든크로스")
 
     if alerts:
-        full_msg = msg + "\n🚨 진입 신호 감지:\n" + "\n".join(alerts)
+        full_msg = msg + "
+🚨 진입 신호 감지:
+" + "
+".join(alerts)
         send_telegram(full_msg)
 
 if __name__ == "__main__":
