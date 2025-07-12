@@ -44,21 +44,21 @@ def analyze_ticker(ticker):
         close = df['Close'].iloc[-1]
         ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
         ma60 = df['Close'].rolling(window=60).mean().iloc[-1]
-        upper_band = df['Close'].rolling(20).mean() + 2 * df['Close'].rolling(20).std()
-        lower_band = df['Close'].rolling(20).mean() - 2 * df['Close'].rolling(20).std()
-        bb_lower = lower_band.iloc[-1]
+        bb_mean = df['Close'].rolling(20).mean()
+        bb_std = df['Close'].rolling(20).std()
+        bb_lower = (bb_mean - 2 * bb_std).iloc[-1]
 
         volume = df['Volume'].iloc[-1]
         volume_prev = df['Volume'].iloc[-2]
-        volume_signal = bool(volume > volume_prev * 1.5)  # 💥 에러 패치 핵심
+        volume_signal = bool(volume > volume_prev * 1.5)
 
-        # ✅ OBV 계산 (에러 방지형)
         change = df['Close'].diff()
         obv_series = df['Volume'].where(change >= 0, -df['Volume'])
         obv = obv_series.cumsum().iloc[-1]
 
         signals = []
 
+        # ✅ 조건문 내부는 반드시 숫자형 스칼라값끼리 비교
         if rsi < 40 and close < ma20:
             signals.append("📉 매수 조건(RSI<40 & 종가<MA20)")
         if rsi > 65 and close > ma20:
