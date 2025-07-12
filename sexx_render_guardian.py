@@ -1,23 +1,29 @@
-# Updated full script with patched get_price and improved error handling
-sexx_render_guardian_code = """
-import os
-import time
-import requests
 import yfinance as yf
-from datetime import datetime
-from pytz import timezone
+import requests
+import time
+import datetime
+import pytz
+import pandas as pd
 
-TD_API = "5ccea133825e4496869229edbbfcc2a2"
+# ✅ 텔레그램 알림 설정
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
 
-TICKERS = [
-    "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
-    "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
-]
+# ✅ 알림 보낼 함수
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message
+    }
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"텔레그램 전송 오류: {e}")
 
-def get_rsi(df, period=14):
-    delta = df['Close'].diff()
+# ✅ RSI 계산 함수
+def calculate_rsi(data, period=14):
+    delta = data['Close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(window=period).mean()
@@ -26,90 +32,58 @@ def get_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {"chat_id": TG_CHAT_ID, "text": msg}
-    try:
-        res = requests.post(url, data=data)
-        res.raise_for_status()
-    except Exception as e:
-        print("❌ 텔레그램 전송 실패:", e)
+# ✅ 감시할 종목들
+TICKERS = [
+    "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL",
+    "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
+]
 
-def get_price(symbol):
-    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TD_API}"
-    try:
-        res = requests.get(url)
-        if res.status_code == 200:
-            data = res.json()
-            return float(data['price'])
-        else:
-            send_telegram(f"[ERROR] price API 실패 - {symbol}: HTTP {res.status_code} / {res.text}")
-            return None
-    except Exception as e:
-        send_telegram(f"[ERROR] price API 예외 발생 - {symbol}: {e}")
-        return None
+# ✅ 이전 상태 저장용
+previous_alerts = {}
 
-def analyze_ticker(ticker):
-    try:
-        df = yf.download(ticker, period="90d", interval="1d", progress=False)
-        df.dropna(inplace=True)
-        if df.shape[0] < 60:
-            raise ValueError("데이터 부족")
+# ✅ 분석 및 알림 함수
+def analyze_and_alert():
+    for ticker in TICKERS:
+        try:
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            df.dropna(inplace=True)
+            df['RSI'] = calculate_rsi(df)
+            ma20 = df['Close'].rolling(window=20).mean()
+            close = df['Close'].iloc[-1]
+            rsi = df['RSI'].iloc[-1]
+            ma = ma20.iloc[-1]
 
-        rsi = get_rsi(df).iloc[-1]
-        close = df['Close'].iloc[-1]
-        ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
-        ma60 = df['Close'].rolling(window=60).mean().iloc[-1]
-        upper_band = df['Close'].rolling(20).mean() + 2 * df['Close'].rolling(20).std()
-        lower_band = df['Close'].rolling(20).mean() - 2 * df['Close'].rolling(20).std()
-        bb_lower = lower_band.iloc[-1]
+            msg_prefix = f"{ticker} 종가({round(close, 2)}) / MA20({round(ma, 2)}) / RSI({round(rsi, 2)})"
 
-        volume = df['Volume'].iloc[-1]
-        volume_prev = df['Volume'].iloc[-2]
-        volume_signal = volume > volume_prev * 1.5
+            alert_triggered = False
 
-        obv = df['Volume'].copy()
-        obv[df['Close'].diff() < 0] *= -1
-        obv = obv.cumsum().iloc[-1]
+            if rsi < 40 and close < ma:
+                if previous_alerts.get(ticker) != 'BUY':
+                    send_telegram_alert(f"🔴 매수 신호: {msg_prefix}\n조건: RSI<40 + 종가<MA20")
+                    previous_alerts[ticker] = 'BUY'
+                    alert_triggered = True
 
-        signals = []
+            elif rsi > 65 and close > ma:
+                if previous_alerts.get(ticker) != 'SELL':
+                    send_telegram_alert(f"📈 매도 신호: {msg_prefix}\n조건: RSI>65 + 종가>MA20")
+                    previous_alerts[ticker] = 'SELL'
+                    alert_triggered = True
 
-        if rsi < 40 and close < ma20:
-            signals.append("📉 매수 조건(RSI<40 & 종가<MA20)")
-        if rsi > 65 and close > ma20:
-            signals.append("🚨 매도 조건(RSI>65 & 종가>MA20)")
-        if close > ma60:
-            signals.append("↗️ MA60 돌파 (추세 전환)")
-        if close < bb_lower:
-            signals.append("🧨 볼린저밴드 하단 이탈")
-        if volume_signal:
-            signals.append("🔥 거래량 급등")
+            else:
+                previous_alerts[ticker] = 'HOLD'
 
-        if signals:
-            msg = f"[{ticker}] 시그널 발생\\n" \
-                  f"종가: {close:.2f}\\nRSI: {rsi:.2f}\\nMA20: {ma20:.2f}, MA60: {ma60:.2f}\\n" \
-                  + "\\n".join(signals)
-            send_telegram(msg)
+        except Exception as e:
+            send_telegram_alert(f"❌ 분석 실패: {ticker}\n에러: {str(e)}")
 
-    except Exception as e:
-        print(f"❌ 분석 실패 - {ticker}: {e}")
-        send_telegram(f"❌ 분석 실패: {ticker}\\n에러: {e}")
-
-def main_loop():
-    while True:
-        now_kst = datetime.now(timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
-        send_telegram(f"⏱️ 자동감시 작동 중: {now_kst}")
-        for ticker in TICKERS:
-            analyze_ticker(ticker)
-        time.sleep(3600)
-
+# ✅ 기본 루프 (10분 간격)
 if __name__ == "__main__":
-    main_loop()
-"""
-
-# Save it to the correct filename
-with open("/mnt/data/sexx_render_guardian.py", "w") as f:
-    f.write(sexx_render_guardian_code)
-
-"/mnt/data/sexx_render_guardian.py"
-
+    while True:
+        try:
+            now = datetime.datetime.now(pytz.timezone('US/Eastern'))
+            if now.weekday() < 5 and now.hour >= 9 and now.hour <= 16:
+                analyze_and_alert()
+            else:
+                print("비거래 시간")
+        except Exception as e:
+            send_telegram_alert(f"전체 루프 에러 발생: {str(e)}")
+        time.sleep(600)  # 10분 간격
