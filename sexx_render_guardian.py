@@ -1,96 +1,84 @@
-# 새로운 설정 적용한 전체 코드를 생성
+from pathlib import Path
+
+# 수정된 sexx_render_guardian.py 생성
 modified_code = '''
 import os
+import pandas as pd
 import yfinance as yf
-import ta
 import requests
 from flask import Flask
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
+from ta.trend import SMAIndicator
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-TELEGRAM_CHAT_ID = "7733010521"
-WATCHLIST = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
+TICKERS = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
+RSI_THRESHOLD = 40
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+def fetch_data(ticker):
+    df = yf.download(ticker, period="20d", interval="1d", progress=False)
+    if len(df) < 20:
+        return None
+    df["RSI"] = RSIIndicator(df["Close"]).rsi()
+    df["MA20"] = SMAIndicator(df["Close"], window=20).sma_indicator()
+    df["MA60"] = SMAIndicator(df["Close"], window=60).sma_indicator()
+    bb = BollingerBands(df["Close"], window=20)
+    df["BB_Lower"] = bb.bollinger_lband()
+    df["VolumeAvg"] = df["Volume"].rolling(window=5).mean()
+    return df
+
+def check_conditions(ticker, df):
+    latest = df.iloc[-1]
+    conditions = {
+        "RSI<40": latest["RSI"] < RSI_THRESHOLD,
+        "Close<MA20": latest["Close"] < latest["MA20"],
+        "Close>MA20": latest["Close"] > latest["MA20"],
+        "Close>MA60": latest["Close"] > latest["MA60"],
+        "Close<BB_Lower": latest["Close"] < latest["BB_Lower"],
+        "Volume>Avg": latest["Volume"] > latest["VolumeAvg"]
+    }
+    triggered = [k for k, v in conditions.items() if v]
+    return triggered
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
-        "parse_mode": "HTML"
+        "parse_mode": "Markdown"
     }
-    try:
-        requests.post(url, data=payload, timeout=5)
-    except Exception as e:
-        print("텔레그램 전송 오류:", e)
+    requests.post(url, json=payload)
 
-def check_alerts():
-    for ticker in WATCHLIST:
-        try:
-            df = yf.download(ticker, period="60d", interval="1d", progress=False)
-            if df.empty:
-                print(f"{ticker} 데이터 없음.")
-                continue
-
-            df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
-            df["MA20"] = df["Close"].rolling(window=20).mean()
-            df["MA60"] = df["Close"].rolling(window=60).mean()
-            bb = ta.volatility.BollingerBands(df["Close"])
-            df["BB_H"] = bb.bollinger_hband()
-            df["BB_L"] = bb.bollinger_lband()
-            df["Volume_Avg"] = df["Volume"].rolling(window=10).mean()
-
-            latest = df.iloc[-1]
-            rsi = latest["RSI"]
-            close = latest["Close"]
-            ma20 = latest["MA20"]
-            ma60 = latest["MA60"]
-            bb_h = latest["BB_H"]
-            bb_l = latest["BB_L"]
-            volume = latest["Volume"]
-            volume_avg = latest["Volume_Avg"]
-
-            messages = []
-
-            if rsi < 40:
-                messages.append(f"#🟥 {ticker} RSI < 40 진입각: RSI={rsi:.2f}")
-
-            if close > ma20 and df['Close'].iloc[-2] <= df['MA20'].iloc[-2]:
-                messages.append(f"#🟩 {ticker} MA20 돌파: 종가={close:.2f}, MA20={ma20:.2f}")
-
-            if close > ma60 and df['Close'].iloc[-2] <= df['MA60'].iloc[-2]:
-                messages.append(f"#📈 {ticker} MA60 돌파: 종가={close:.2f}, MA60={ma60:.2f}")
-
-            if close < bb_l:
-                messages.append(f"#📉 {ticker} 볼밴 하단 이탈: 종가={close:.2f}, BB_L={bb_l:.2f}")
-
-            if volume > volume_avg * 1.5:
-                messages.append(f"#📊 {ticker} 거래량 급증: {volume/1e6:.2f}M > 평균 {volume_avg/1e6:.2f}M")
-
-            if messages:
-                combined_message = f"<b>{ticker} 경고 알림</b>\\n" + "\\n".join(messages) + f"\\n🔗 <a href='https://finance.yahoo.com/quote/{ticker}'>[차트 보기]</a> #주식 #알림"
-                send_telegram_message(combined_message)
-
-        except Exception as e:
-            print(f"{ticker} 에러 발생: {e}")
-
-@app.route('/')
-def home():
-    return "Hello from Guardian"
-
-@app.route('/ping')
+@app.route("/ping")
 def ping():
-    check_alerts()
-    return "pong"
+    messages = []
+    for ticker in TICKERS:
+        try:
+            df = fetch_data(ticker)
+            if df is None:
+                continue
+            triggered = check_conditions(ticker, df)
+            if triggered:
+                last_close = df.iloc[-1]["Close"]
+                message = f"🚨 *{ticker} 알림 트리거!* 🚨\\n조건: {', '.join(triggered)}\\n📉 종가: ${last_close:.2f}\\n[🔗 트레이딩뷰](https://www.tradingview.com/symbols/{ticker})"
+                send_telegram_message(message)
+                messages.append(f"{ticker}: {', '.join(triggered)}")
+        except Exception as e:
+            print(f"Error for {ticker}: {e}")
+    return "\\n".join(messages) if messages else "✅ 모든 종목 이상 없음."
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    os.makedirs("/mnt/data", exist_ok=True)
+    file_path = "/mnt/data/sexx_render_guardian.py"
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("This is a test file created at runtime.\\n")
+    app.run(host="0.0.0.0", port=10000)
 '''
 
-# 저장
-file_path = "/mnt/data/sexx_render_guardian.py"
-with open(file_path, "w", encoding="utf-8") as f:
-    f.write(modified_code)
+output_path = "/mnt/data/sexx_render_guardian.py"
+Path(output_path).write_text(modified_code, encoding="utf-8")
 
-file_path
+output_path
