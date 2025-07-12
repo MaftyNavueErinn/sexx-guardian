@@ -1,11 +1,17 @@
+from pathlib import Path
 
+# 수정된 코드 내용
+code = '''
 import time
 import requests
 import yfinance as yf
 from datetime import datetime
 
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-CHAT_ID = 'YOUR_CHAT_ID'
+# ✅ 아래 두 줄만 너의 정보로 수정하면 된다
+TD_API = "5ccea133825e4496869229edbbfcc2a2"
+TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+TG_CHAT_ID = "7733010521"
+
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -37,21 +43,28 @@ def check_signal(ticker):
     ma20 = get_ma(close, 20).iloc[-1]
     current_price = close.iloc[-1]
 
-    msg = f"{ticker} 현재가: ${current_price:.2f} | RSI: {rsi:.2f} | MA20: ${ma20:.2f}\n"
+    msg = f"{ticker} 현재가: ${current_price:.2f} | RSI: {rsi:.2f} | MA20: ${ma20:.2f}\\n"
 
     signal_triggered = False
     if rsi < 35 and current_price < ma20:
-        msg += "[매수 타점 포착 - RSI < 35 & 종가 < MA20]\n"
+        msg += "[매수 타점 포착 - RSI < 35 & 종가 < MA20]\\n"
         signal_triggered = True
     elif rsi > 65 and current_price > ma20:
-        msg += "[매도 타점 포착 - RSI > 65 & 종가 > MA20]\n"
+        msg += "[매도 타점 포착 - RSI > 65 & 종가 > MA20]\\n"
         signal_triggered = True
 
     if signal_triggered:
-        full_msg = msg + "[진입 신호 감지!]"
+        full_msg = msg + "[🚨 진입 신호 감지!]"
         send_telegram_message(full_msg)
 
 if __name__ == "__main__":
     TICKERS = ["TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "ORCL", "AVGO"]
     for ticker in TICKERS:
         check_signal(ticker)
+'''
+
+# 파일로 저장
+file_path = Path("/mnt/data/sexx_render_guardian_fixed.py")
+file_path.write_text(code)
+
+file_path.name
