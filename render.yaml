@@ -7,7 +7,7 @@ services:
     startCommand: python sexx_render_guardian_modified.py
     envVars:
       - key: TELEGRAM_BOT_TOKEN
-        value: dummy_token_used_only_if_env_required
+        value: 7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ
       - key: TELEGRAM_CHAT_ID
-        value: dummy_chat_id_used_only_if_env_required
+        value: 7733010521
     autoDeploy: true
