@@ -1,71 +1,58 @@
-from flask import Flask, jsonify, request
 import yfinance as yf
 import pandas as pd
+from flask import Flask
 import requests
+from ta.momentum import RSIIndicator
 
-# === Telegram 설정 ===
+app = Flask(__name__)
+
+# 💥 텔레그램 정보
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
-TG_API = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
 
-# === 감시 대상 종목 ===
+# 💥 감시할 종목 목록 (쎆쓰 풀버전)
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO",
     "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-app = Flask(__name__)
+# ✅ RSI 계산 함수
+def calculate_rsi(series, period=14):
+    rsi = RSIIndicator(close=series, window=period)
+    return rsi.rsi().iloc[-1]
 
-def fetch_data(ticker):
-    df = yf.download(ticker, period="20d", interval="1d", progress=False)
-    df["MA20"] = df["Close"].rolling(window=20).mean()
-    delta = df["Close"].diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
-    rs = avg_gain / avg_loss
-    df["RSI"] = 100 - (100 / (1 + rs))
-    return df
+# ✅ 텔레그램 전송 함수
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {"chat_id": TG_CHAT_ID, "text": message}
+    requests.post(url, data=payload)
 
-def check_condition(ticker, df):
-    latest = df.iloc[-1]
-    close = latest["Close"]
-    ma20 = latest["MA20"]
-    rsi = latest["RSI"]
-
-    alerts = []
-
-    # 조건 예시
-    if rsi < 35 and close < ma20:
-        alerts.append(f"📉 {ticker}: RSI {rsi:.1f}, 종가 {close:.2f} < MA20 {ma20:.2f} → 매수 타점 가능성")
-    elif rsi > 65 and close > ma20:
-        alerts.append(f"📈 {ticker}: RSI {rsi:.1f}, 종가 {close:.2f} > MA20 {ma20:.2f} → 매도 타점 가능성")
-
-    return alerts
-
-def send_telegram(msg):
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": msg
-    }
-    requests.post(TG_API, data=payload)
-
-@app.route("/ping", methods=["GET"])
-def ping():
-    all_alerts = []
+# ✅ 알림 감시 루틴
+def check_alerts():
     for ticker in TICKERS:
         try:
-            df = fetch_data(ticker)
-            alerts = check_condition(ticker, df)
-            all_alerts.extend(alerts)
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            close = df['Close']
+            rsi = calculate_rsi(close)
+
+            # 💥 테스트 조건: RSI > 10이면 무조건 알림
+            if rsi > 10:
+                send_telegram(f"🔥 [TEST 알림] {ticker} RSI: {rsi:.2f} 조건 만족!")
+
         except Exception as e:
-            print(f"{ticker} 에러 발생: {e}")
+            print(f"{ticker} 처리 실패: {e}")
 
-    if all_alerts:
-        message = "\n".join(all_alerts)
-        send_telegram(f"📡 감시 결과:\n{message}")
-    return jsonify({"status": "checked", "alerts_sent": len(all_alerts)})
+# ✅ /ping 엔드포인트 → UptimeRobot 주기 호출
+@app.route("/ping")
+def ping():
+    check_alerts()
+    return "pong"
 
+# ✅ 루트 경로 접근 시도
+@app.route("/")
+def index():
+    return "SEXX GUARDIAN ONLINE"
+
+# ✅ 앱 실행
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
