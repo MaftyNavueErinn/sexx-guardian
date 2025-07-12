@@ -6,8 +6,8 @@ from flask import Flask
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = os.getenv(""7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"")
-TELEGRAM_CHAT_ID = os.getenv("7733010521")
+TELEGRAM_BOT_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+TELEGRAM_CHAT_ID = "7733010521"
 WATCHLIST = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
 
 def send_telegram_message(message):
@@ -56,7 +56,6 @@ def ping():
     check_alerts()
     return "pong"
 
-# ✅ 이게 없으면 Render에서 자동 종료됨
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
