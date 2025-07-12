@@ -1,64 +1,85 @@
+import time
 import yfinance as yf
-from ta.momentum import RSIIndicator
+import pandas as pd
+import numpy as np
 from flask import Flask
-import requests
+from datetime import datetime
+import logging
 
 app = Flask(__name__)
-
-TELEGRAM_BOT_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-TELEGRAM_CHAT_ID = "7733010521"
 
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-TEST_FORCE_ALERT = True  # ✅ 테스트 강제 알람
+RSI_THRESHOLD = 40
 
-def send_telegram_alert(message):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-        response = requests.post(url, data=data)
-        print("📨 텔레그램 응답:", response.status_code, response.text)
-    except Exception as e:
-        print("❌ 텔레그램 전송 실패:", e)
+# Max Pain 수동 등록
+MAX_PAIN = {
+    "TSLA": 310,
+    "ORCL": 225,
+    "MSFT": 490,
+    "AMZN": 215,
+    "NVDA": 160,
+    "META": 700,
+    "AAPL": 200,
+    "AVGO": 265,
+    "GOOGL": 177.5,
+    "PSTG": 55,
+    "SYM": 43,
+    "TSM": 225,
+    "ASML": 790,
+    "AMD": 140,
+    "ARM": 145
+}
 
-def check_all_rsi():
-    print("🚨 [RSI 감시 시작]")
+def get_rsi(close_prices, period=14):
+    delta = close_prices.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    ma_up = up.rolling(window=period, min_periods=1).mean()
+    ma_down = down.rolling(window=period, min_periods=1).mean()
+    rs = ma_up / ma_down
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
+def check_tickers():
+    messages = []
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            if df.empty:
-                print(f"❌ {ticker}: 데이터 없음")
-                continue
+            if df.empty or len(df) < 20:
+                raise ValueError("Not enough data")
 
-            close = df["Close"]
-            if len(close.shape) > 1:
-                close = close.squeeze()  # ✅ 2차원 → 1차원
-
-            rsi = RSIIndicator(close=close).rsi().iloc[-1]
+            close = df['Close']
+            rsi_series = get_rsi(close)
+            rsi = rsi_series.iloc[-1]
+            close_price = close.iloc[-1]
             ma20 = close.rolling(window=20).mean().iloc[-1]
-            price = close.iloc[-1]
 
-            print(f"[{ticker}] RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}")
+            mp = MAX_PAIN.get(ticker, None)
+            mp_str = f" | MaxPain: {mp}" if mp else ""
 
-            if TEST_FORCE_ALERT:
+            if rsi < RSI_THRESHOLD or close_price > ma20:
                 msg = (
-                    f"[TEST 강제 알람] {ticker}\n"
-                    f"RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}"
+                    f"📡 [실전 감시] {ticker}\n"
+                    f"RSI: {rsi:.2f} | 종가: {close_price:.2f} | MA20: {ma20:.2f}{mp_str}"
                 )
-                send_telegram_alert(msg)
+                messages.append(msg)
 
         except Exception as e:
-            print(f"❌ [TEST] {ticker} 처리 실패 → 예외 발생: {e}")
+            messages.append(f"⚠️ {ticker} 에러: {str(e)}")
+    return messages
 
-@app.route("/ping")
+@app.route('/ping')
 def ping():
-    print("📡 /ping 수신됨 → 감시 루틴 작동")
-    check_all_rsi()
-    return "Ping OK"
+    print(f"⏰ Ping 수신됨: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    results = check_tickers()
+    for msg in results:
+        print(msg)
+    return "Ping OK\n"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    app.run(host='0.0.0.0', port=10000)
