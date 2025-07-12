@@ -1,52 +1,59 @@
-from pathlib import Path
-
-# 기존에 문제가 됐던 코드
-# Path(file_path).write_text(rsi_only_script)
-
-# ✅ 수정본: 파일 저장 안 함 — Render에서는 불필요함
-# 대신 기존 rsi_only_script 실행 로직만 유지
-
-# 아래는 예시 구조로, 전체 context를 모르니 함수로 묶어서 구성
 import os
+import time
 import yfinance as yf
+import pandas as pd
+import numpy as np
 from ta.momentum import RSIIndicator
 from flask import Flask
 import requests
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = os.environ.get("7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ")
-TELEGRAM_CHAT_ID = os.environ.get("7733010521")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-TICKERS = ["TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
+# 테스트용 종목 (TSLA)
+TICKER = "TSLA"
 
-def send_telegram_alert(message: str):
+def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print("텔레그램 전송 오류:", e)
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    requests.post(url, data=data)
 
 def check_rsi_and_alert():
-    for ticker in TICKERS:
-        df = yf.download(ticker, period="20d", interval="1d", progress=False)
-        if df.empty:
-            continue
-        close = df["Close"]
+    df = yf.download(TICKER, period="20d", interval="1d", progress=False)
+
+    if df.empty:
+        print("데이터가 없습니다.")
+        return
+
+    close = df["Close"]
+    if len(close.shape) > 1:
+        close = close.squeeze()  # (20,1) 형태일 경우 1D로 변환
+
+    ma20 = close.rolling(window=20).mean()
+    try:
         rsi = RSIIndicator(close=close).rsi().iloc[-1]
-        latest_price = close.iloc[-1]
+    except Exception as e:
+        print("RSI 계산 중 오류 발생:", e)
+        return
 
-        if rsi < 40:  # 널널하게 조건 설정
-            msg = f"📉 {ticker} RSI 낮음 ({rsi:.2f}) — 현재가 ${latest_price:.2f}\n#매수타점?"
-            send_telegram_alert(msg)
+    current_price = close.iloc[-1]
+    current_ma20 = ma20.iloc[-1]
 
-@app.route("/ping", methods=["GET"])
+    message = f"[알림] {TICKER}\nRSI: {rsi:.2f} | 종가: {current_price:.2f} | MA20: {current_ma20:.2f}"
+    print(message)
+
+    # 타점 조건
+    if rsi < 35 and current_price < current_ma20:
+        send_telegram_alert(f"📉 [{TICKER}] RSI < 35 & 종가 < MA20 진입 타점!")
+    elif rsi > 65 and current_price > current_ma20:
+        send_telegram_alert(f"🚀 [{TICKER}] RSI > 65 & 종가 > MA20 익절 타점!")
+
+@app.route("/ping")
 def ping():
-    send_telegram_alert("🧪 테스트용 알림입니다. 시스템은 정상 작동 중입니다.")
     check_rsi_and_alert()
-    return "알림 전송됨"
+    return "Ping received and RSI checked!"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
