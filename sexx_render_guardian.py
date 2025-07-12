@@ -1,4 +1,3 @@
-
 import os
 import yfinance as yf
 import ta
@@ -56,3 +55,8 @@ def home():
 def ping():
     check_alerts()
     return "pong"
+
+# ✅ 이게 없으면 Render에서 자동 종료됨
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
