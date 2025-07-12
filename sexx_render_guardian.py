@@ -5,10 +5,11 @@ import requests
 import yfinance as yf
 from datetime import datetime
 from pytz import timezone
+from flask import Flask
 
-TD_API = "5ccea133825e4496869229edbbfcc2a2"
-TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-TG_CHAT_ID = "7733010521"
+TO_API = "SAMPLE_TELEGRAM_API"
+TG_TOKEN = "SAMPLE_BOT_TOKEN"
+TG_CHAT_ID = "SAMPLE_CHAT_ID"
 
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
@@ -32,34 +33,35 @@ def send_telegram_message(message):
         response = requests.post(url, data=data)
         response.raise_for_status()
     except Exception as e:
-        print("텔레그램 전송 실패:", e)
+        print("❌텔레그램 전송 실패:", e)
 
 def analyze_ticker(ticker):
-    df = yf.download(ticker, period="20d", interval="1d", progress=False)
-    if df.empty or len(df) < 20:
-        return
+    try:
+        df = yf.download(ticker, period="20d", interval="1d", progress=False)
+        df.dropna(inplace=True)
+        rsi = get_rsi(df).iloc[-1]
+        close = df['Close'].iloc[-1]
+        ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
 
-    df["RSI"] = get_rsi(df)
-    close_price = df["Close"].iloc[-1]
-    ma20 = df["Close"].rolling(window=20).mean().iloc[-1]
-    rsi = df["RSI"].iloc[-1]
+        message = None
+        if rsi < 35 and close < ma20:
+            message = f"🟢 {ticker} 매수 타점: RSI {rsi:.2f}, 종가 {close:.2f} < MA20 {ma20:.2f}"
+        elif rsi > 65 and close > ma20:
+            message = f"🔴 {ticker} 매도 타점: RSI {rsi:.2f}, 종가 {close:.2f} > MA20 {ma20:.2f}"
 
-    # 진입 타점 조건
-    rsi_entry = rsi < 35 and close_price < ma20
-    ma_breakout = close_price > ma20
+        if message:
+            send_telegram_message(message)
 
-    if rsi_entry:
-        msg = f"[{ticker}] 📉 RSI 진입 타점: RSI={rsi:.2f}, 종가={close_price:.2f}, MA20={ma20:.2f}"
-        send_telegram_message(msg)
-    elif ma_breakout:
-        msg = f"[{ticker}] 🚀 MA20 돌파 진입 타점: 종가={close_price:.2f}, MA20={ma20:.2f}, RSI={rsi:.2f}"
-        send_telegram_message(msg)
+    except Exception as e:
+        print(f"❌ 분석 실패 - {ticker}: {e}")
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    for ticker in TICKERS:
+        analyze_ticker(ticker)
+    return "🔥쎆쓰 감시 완료"
 
 if __name__ == "__main__":
-    now_kst = datetime.now(timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
-    send_telegram_message(f"📡 감시 시작: {now_kst}")
-    for ticker in TICKERS:
-        try:
-            analyze_ticker(ticker)
-        except Exception as e:
-            send_telegram_message(f"[{ticker}] 분석 실패: {e}")
+    app.run(host="0.0.0.0", port=8000)
