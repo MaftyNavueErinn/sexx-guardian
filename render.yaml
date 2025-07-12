@@ -2,10 +2,12 @@ services:
   - type: web
     name: sexx-guardian
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python sexx_render_guardian.py"
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python sexx_render_guardian_modified.py
     envVars:
       - key: TELEGRAM_BOT_TOKEN
-        value: your_telegram_bot_token
+        value: dummy_token_used_only_if_env_required
       - key: TELEGRAM_CHAT_ID
-        value: your_chat_id
+        value: dummy_chat_id_used_only_if_env_required
+    autoDeploy: true
