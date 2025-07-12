@@ -13,17 +13,7 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-# ✅ 테스트 모드 ON
-TEST_FORCE_ALERT = True
-
-def get_max_pain_placeholder(ticker):
-    dummy_max_pain = {
-        "TSLA": 315, "ORCL": 130, "MSFT": 440, "AMZN": 185,
-        "NVDA": 120, "META": 500, "AAPL": 200, "AVGO": 270,
-        "GOOGL": 180, "PSTG": 66, "SYM": 58, "TSM": 180,
-        "ASML": 930, "AMD": 150, "ARM": 145
-    }
-    return dummy_max_pain.get(ticker, "N/A")
+TEST_FORCE_ALERT = True  # ✅ 강제 테스트 모드 ON
 
 def send_telegram_alert(message):
     try:
@@ -51,13 +41,11 @@ def check_all_rsi():
 
             print(f"[{ticker}] RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}")
 
-            # 💥 테스트 모드: 무조건 알람 보냄
-            if TEST_FORCE_ALERT or rsi <= 40:
-                max_pain = get_max_pain_placeholder(ticker)
+            # ✅ 테스트 모드 무조건 발사
+            if TEST_FORCE_ALERT:
                 msg = (
-                    f"[TEST] 📡 {ticker} 알람 테스트\n"
-                    f"RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}\n"
-                    f"Max Pain: {max_pain}"
+                    f"[TEST 강제 알람] {ticker}\n"
+                    f"RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}"
                 )
                 send_telegram_alert(msg)
 
