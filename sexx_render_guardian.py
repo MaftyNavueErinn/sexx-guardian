@@ -6,7 +6,6 @@ import requests
 import yfinance as yf
 from datetime import datetime
 
-TD_API = "5ccea133825e4496869229edbbfcc2a2"
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
 
@@ -61,5 +60,6 @@ if __name__ == "__main__":
 """
 
 file_path = Path("/mnt/data/sexx_render_guardian.py")
+file_path.parent.mkdir(parents=True, exist_ok=True)
 file_path.write_text(code)
 file_path
