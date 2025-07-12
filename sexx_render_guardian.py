@@ -5,6 +5,7 @@ import numpy as np
 from flask import Flask
 from datetime import datetime
 import logging
+import requests
 
 app = Flask(__name__)
 
@@ -33,6 +34,20 @@ MAX_PAIN = {
     "AMD": 140,
     "ARM": 145
 }
+
+# 텔레그램 알림 설정
+TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
+TG_CHAT_ID = "7733010521"
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {"chat_id": TG_CHAT_ID, "text": text}
+    try:
+        response = requests.post(url, json=payload)
+        if not response.ok:
+            print(f"❌ 텔레그램 전송 실패: {response.text}")
+    except Exception as e:
+        print(f"❌ 텔레그램 전송 에러: {e}")
 
 def get_rsi(close_prices, period=14):
     delta = close_prices.diff()
@@ -74,10 +89,18 @@ def check_tickers():
 
 @app.route('/ping')
 def ping():
-    print(f"⏰ Ping 수신됨: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"⏰ Ping 수신됨: {now}")
+    send_telegram_message(f"🚀 Ping 수신됨: {now}")
+
     results = check_tickers()
-    for msg in results:
-        print(msg)
+    if results:
+        for msg in results:
+            print(msg)
+            send_telegram_message(msg)
+    else:
+        send_telegram_message("😶 감지된 종목 없음 (RSI < 40 or MA20 돌파 없음)")
+
     return "Ping OK\n"
 
 if __name__ == '__main__':
