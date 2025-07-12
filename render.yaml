@@ -1,25 +1,11 @@
-# render.yaml 파일 경로
-render_yaml_path = Path("/mnt/data/render.yaml")
-
-# render.yaml 내용 작성
-render_yaml_content = """
 services:
   - type: web
     name: sexx-guardian
     env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python sexx_render_guardian_modified.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python sexx_render_guardian.py"
     envVars:
       - key: TELEGRAM_BOT_TOKEN
-        value: dummy_token_used_only_if_env_required
+        value: your_telegram_bot_token
       - key: TELEGRAM_CHAT_ID
-        value: dummy_chat_id_used_only_if_env_required
-    autoDeploy: true
-"""
-
-# 저장
-with open(render_yaml_path, "w", encoding="utf-8") as f:
-    f.write(render_yaml_content)
-
-render_yaml_path.name
+        value: your_chat_id
