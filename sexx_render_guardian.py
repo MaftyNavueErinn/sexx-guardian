@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 from flask import Flask
 import requests
+import time
 from ta.momentum import RSIIndicator
 
 app = Flask(__name__)
@@ -21,11 +22,16 @@ def calculate_rsi(series, period=14):
     rsi = RSIIndicator(close=series, window=period)
     return rsi.rsi().iloc[-1]
 
-# ✅ 텔레그램 전송 함수
+# ✅ 텔레그램 전송 함수 (응답 확인 포함)
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {"chat_id": TG_CHAT_ID, "text": message}
-    requests.post(url, data=payload)
+    response = requests.post(url, data=payload)
+
+    if response.status_code != 200:
+        print("❌ 텔레그램 전송 실패:", response.text)
+    else:
+        print("✅ 텔레그램 전송 성공:", message)
 
 # ✅ 알림 감시 루틴
 def check_alerts():
@@ -35,20 +41,21 @@ def check_alerts():
             close = df['Close']
             rsi = calculate_rsi(close)
 
-            # 💥 테스트 조건: RSI > 10이면 무조건 알림
+            # 💥 테스트 조건: RSI > 10이면 알림
             if rsi > 10:
                 send_telegram(f"🔥 [TEST 알림] {ticker} RSI: {rsi:.2f} 조건 만족!")
 
         except Exception as e:
-            print(f"{ticker} 처리 실패: {e}")
+            print(f"⚠️ {ticker} 처리 실패: {e}")
 
 # ✅ /ping 엔드포인트 → UptimeRobot 주기 호출
 @app.route("/ping")
 def ping():
     check_alerts()
+    time.sleep(0.5)  # 응답 너무 빨리 끝내지 않게 지연
     return "pong"
 
-# ✅ 루트 경로 접근 시도
+# ✅ 루트 경로
 @app.route("/")
 def index():
     return "SEXX GUARDIAN ONLINE"
