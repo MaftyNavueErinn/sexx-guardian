@@ -1,5 +1,6 @@
-yfinance
-pytz
-requests
 flask
-ta
+yfinance
+pandas
+numpy
+requests
+gunicorn
