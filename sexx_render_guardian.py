@@ -13,7 +13,7 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-TEST_FORCE_ALERT = True  # ✅ 테스트 강제 발사 모드 ON
+TEST_FORCE_ALERT = True  # ✅ 테스트 강제 알람
 
 def send_telegram_alert(message):
     try:
@@ -30,14 +30,14 @@ def check_all_rsi():
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-
             if df.empty:
-                msg = f"⚠️ [TEST] {ticker} 데이터 없음 → 강제 테스트 알람"
-                send_telegram_alert(msg)
-                print(msg)
+                print(f"❌ {ticker}: 데이터 없음")
                 continue
 
             close = df["Close"]
+            if len(close.shape) > 1:
+                close = close.squeeze()  # ✅ 2차원 → 1차원
+
             rsi = RSIIndicator(close=close).rsi().iloc[-1]
             ma20 = close.rolling(window=20).mean().iloc[-1]
             price = close.iloc[-1]
@@ -46,20 +46,17 @@ def check_all_rsi():
 
             if TEST_FORCE_ALERT:
                 msg = (
-                    f"📣 [TEST] RSI 강제 트리거\n"
-                    f"{ticker} - RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}"
+                    f"[TEST 강제 알람] {ticker}\n"
+                    f"RSI: {rsi:.2f} | 종가: {price:.2f} | MA20: {ma20:.2f}"
                 )
                 send_telegram_alert(msg)
 
         except Exception as e:
-            msg = f"❌ [TEST] {ticker} 처리 실패 → 예외 발생: {e}"
-            print(msg)
-            send_telegram_alert(msg)
+            print(f"❌ [TEST] {ticker} 처리 실패 → 예외 발생: {e}")
 
 @app.route("/ping")
 def ping():
-    print("📡 /ping 수신됨 → 테스트 알람 + 감시 시작")
-    send_telegram_alert("💣 [TEST] /ping 감지됨 → 감시 루틴 작동 시작")
+    print("📡 /ping 수신됨 → 감시 루틴 작동")
     check_all_rsi()
     return "Ping OK"
 
