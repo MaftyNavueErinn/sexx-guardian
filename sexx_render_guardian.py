@@ -1,6 +1,8 @@
-from pathlib import Path
+from datetime import datetime
+from pytz import timezone
 
-code = """
+# 사용자 요청에 따라 조건을 매우 널널하게 설정한 버전의 파이썬 파일 생성
+code = '''
 import os
 import yfinance as yf
 import ta
@@ -26,50 +28,47 @@ def send_telegram_message(message):
         print("텔레그램 전송 오류:", e)
 
 def check_alerts():
+    send_telegram_message("✅ 자동 감시 시스템 정상 작동 중")
+
     for ticker in WATCHLIST:
         try:
-            df = yf.download(ticker, period="60d", interval="1d", progress=False)
-            if df.empty:
-                print(f"{ticker} 데이터 없음.")
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            if df.empty or len(df) < 5:
                 continue
 
             df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
             df["MA20"] = df["Close"].rolling(window=20).mean()
             df["MA60"] = df["Close"].rolling(window=60).mean()
-            bb = ta.volatility.BollingerBands(close=df["Close"], window=20, window_dev=2)
-            df["BB_upper"] = bb.bollinger_hband()
-            df["BB_lower"] = bb.bollinger_lband()
-            df["Volume_MA20"] = df["Volume"].rolling(window=20).mean()
+            df["Bollinger_Lower"] = ta.volatility.BollingerBands(df["Close"]).bollinger_lband()
+            df["Volume_Change"] = df["Volume"] / df["Volume"].shift(1)
 
             latest = df.iloc[-1]
             prev = df.iloc[-2]
-            rsi = latest["RSI"]
-            close = latest["Close"]
-            ma20 = latest["MA20"]
-            ma60 = latest["MA60"]
-            bb_upper = latest["BB_upper"]
-            bb_lower = latest["BB_lower"]
-            volume = latest["Volume"]
-            volume_ma = latest["Volume_MA20"]
 
-            alert_msgs = []
+            msg = f"<b>📢 {ticker} 감시 트리거 발생</b>\\n"
+            condition_met = False
 
-            if rsi < 40:
-                alert_msgs.append(f"⚠️ <b>{ticker}</b> RSI < 40 진입타점: RSI={rsi:.2f}, 종가={close:.2f}")
+            if latest["RSI"] < 60:
+                msg += f"🟢 RSI 조건 통과 (RSI={latest['RSI']:.2f})\\n"
+                condition_met = True
 
-            if close > ma20 and prev["Close"] <= prev["MA20"]:
-                alert_msgs.append(f"📈 <b>{ticker}</b> MA20 돌파: 종가={close:.2f} > MA20={ma20:.2f}")
+            if latest["Close"] > latest["MA20"]:
+                msg += f"🟢 MA20 돌파 (Close={latest['Close']:.2f}, MA20={latest['MA20']:.2f})\\n"
+                condition_met = True
 
-            if close > ma60 and prev["Close"] <= prev["MA60"]:
-                alert_msgs.append(f"📈 <b>{ticker}</b> MA60 돌파: 종가={close:.2f} > MA60={ma60:.2f}")
+            if latest["Close"] > latest["MA60"]:
+                msg += f"🟢 MA60 돌파 (Close={latest['Close']:.2f}, MA60={latest['MA60']:.2f})\\n"
+                condition_met = True
 
-            if close <= bb_lower:
-                alert_msgs.append(f"🔻 <b>{ticker}</b> 볼린저 하단 이탈: 종가={close:.2f}, BB 하단={bb_lower:.2f}")
+            if latest["Close"] < latest["Bollinger_Lower"]:
+                msg += f"🟡 볼밴 하단 이탈 (Close={latest['Close']:.2f}, Lower={latest['Bollinger_Lower']:.2f})\\n"
+                condition_met = True
 
-            if volume > 1.5 * volume_ma:
-                alert_msgs.append(f"💥 <b>{ticker}</b> 거래량 급등: 현재={volume:.0f}, 평균={volume_ma:.0f}")
+            if latest["Volume_Change"] > 1.1:
+                msg += f"🟠 거래량 급증 (Change={latest['Volume_Change']:.2f}배)\\n"
+                condition_met = True
 
-            for msg in alert_msgs:
+            if condition_met:
                 send_telegram_message(msg)
 
         except Exception as e:
@@ -77,18 +76,17 @@ def check_alerts():
 
 @app.route('/')
 def home():
-    return "Hello from Guardian"
+    return "Sexx Guardian Online"
 
 @app.route('/ping')
 def ping():
     check_alerts()
     return "pong"
+'''
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-"""
+# 파일 저장
+file_path = "/mnt/data/sexx_render_guardian_modified_loose.py"
+with open(file_path, "w", encoding="utf-8") as f:
+    f.write(code)
 
-file_path = "/mnt/data/sexx_render_guardian_modified.py"
-Path(file_path).write_text(code)
 file_path
