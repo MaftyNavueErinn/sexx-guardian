@@ -1,4 +1,3 @@
-core_script = '''
 import requests
 import time
 import numpy as np
@@ -112,9 +111,3 @@ if __name__ == "__main__":
         for symbol in TICKERS:
             check_conditions(symbol)
         time.sleep(3600)
-'''
-
-with open("/mnt/data/sexx_guardian_full_auto_pro_v2.py", "w") as f:
-    f.write(core_script)
-
-"/mnt/data/sexx_guardian_full_auto_pro_v2.py"
