@@ -1,4 +1,3 @@
-corrected_code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -80,7 +79,7 @@ def check_tickers():
 
             if rsi < RSI_THRESHOLD or close_price > ma20:
                 msg = (
-                    f"📡 [실전 감시] {ticker}\\n"
+                    f"📡 [실전 감시] {ticker}\n"
                     f"RSI: {rsi:.2f} | 종가: {close_price:.2f} | MA20: {ma20:.2f}{mp_str}"
                 )
                 messages.append(msg)
@@ -103,15 +102,8 @@ def ping():
     else:
         send_telegram_message("😶 감지된 종목 없음 (RSI < 40 or MA20 돌파 없음)")
 
-    return "Ping OK\\n"
+    return "Ping OK\n"
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     app.run(host='0.0.0.0', port=10000)
-"""
-
-file_path = "/mnt/data/sexx_render_guardian.py"
-with open(file_path, "w", encoding="utf-8") as f:
-    f.write(corrected_code)
-
-file_path
