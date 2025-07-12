@@ -1,117 +1,57 @@
 
-import requests
 import time
-import numpy as np
+import requests
+import yfinance as yf
+from datetime import datetime
 
-TD_API = "5ccea133825e4496869229edbbfcc2a2"
-TG_TOKEN = "Y7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-TG_CHAT_ID = "7733010521"
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+CHAT_ID = 'YOUR_CHAT_ID'
 
-TICKERS = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO",
-           "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
-
-INTERVAL = "1h"
-RSI_THRESHOLD = 35
-
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {"chat_id": TG_CHAT_ID, "text": msg}
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {"chat_id": CHAT_ID, "text": message}
     try:
         requests.post(url, data=data)
     except Exception as e:
-        print(f"Telegram Error: {e}")
+        print("텔레그램 전송 에러:", e)
 
-def get_ta_data(symbol):
-    try:
-        url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={TD_API}"
-        res = requests.get(url).json()
-        values = res['values']
-        closes = np.array([float(item['close']) for item in values])[::-1]
-        volumes = np.array([float(item['volume']) for item in values])[::-1]
+def get_rsi(data, window=14):
+    delta = data.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=window, min_periods=window).mean()
+    avg_loss = loss.rolling(window=window, min_periods=window).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
-        # RSI
-        delta = np.diff(closes)
-        gain = np.where(delta > 0, delta, 0)
-        loss = np.where(delta < 0, -delta, 0)
-        avg_gain = np.mean(gain[-14:])
-        avg_loss = np.mean(loss[-14:])
-        rs = avg_gain / avg_loss if avg_loss != 0 else 0
-        rsi = 100 - (100 / (1 + rs))
+def get_ma(data, window):
+    return data.rolling(window=window).mean()
 
-        # MA
-        ma20 = np.mean(closes[-20:])
-        ma60 = np.mean(closes[-60:]) if len(closes) >= 60 else ma20
-
-        # Bollinger Bands
-        std = np.std(closes[-20:])
-        upper_band = ma20 + (2 * std)
-        lower_band = ma20 - (2 * std)
-
-        # MACD
-        ema12 = np.mean(closes[-12:])
-        ema26 = np.mean(closes[-26:])
-        macd = ema12 - ema26
-        signal = np.mean([ema12 - ema26 for _ in range(9)])
-
-        # OBV
-        obv = 0
-        for i in range(1, len(closes)):
-            if closes[i] > closes[i-1]:
-                obv += volumes[i]
-            elif closes[i] < closes[i-1]:
-                obv -= volumes[i]
-
-        return {
-            "rsi": rsi,
-            "ma20": ma20,
-            "ma60": ma60,
-            "close": closes[-1],
-            "upper": upper_band,
-            "lower": lower_band,
-            "macd": macd,
-            "signal": signal,
-            "obv": obv
-        }
-    except Exception as e:
-        print(f"[{symbol}] Error: {e}")
-        return None
-
-def check_conditions(symbol):
-    data = get_ta_data(symbol)
-    if data is None:
+def check_signal(ticker):
+    df = yf.download(ticker, period="20d", interval="1d", progress=False)
+    if df.empty:
         return
 
-    msg = f"""
-📊 [{symbol}] 감시 보고서
-🔹 종가: {data['close']:.2f}
-🔹 RSI: {data['rsi']:.1f}
-🔹 MA20: {data['ma20']:.2f}
-🔹 MA60: {data['ma60']:.2f}
-🔹 MACD: {data['macd']:.2f} / Signal: {data['signal']:.2f}
-🔹 OBV: {data['obv']:.0f}
-"""
+    close = df["Close"]
+    rsi = get_rsi(close).iloc[-1]
+    ma20 = get_ma(close, 20).iloc[-1]
+    current_price = close.iloc[-1]
 
-    alerts = []
-    if data['rsi'] < RSI_THRESHOLD:
-        alerts.append(f"⚠️ RSI 과매도 ({data['rsi']:.1f})")
-    if data['close'] > data['ma20'] and data['close'] > data['ma60']:
-        alerts.append("🚀 MA20/MA60 돌파")
-    if data['close'] < data['lower']:
-        alerts.append("📉 볼밴 하단 이탈")
-    if data['close'] > data['upper']:
-        alerts.append("📈 볼밴 상단 돌파")
-    if data['macd'] > data['signal']:
-        alerts.append("🟢 MACD 골든크로스")
+    msg = f"{ticker} 현재가: ${current_price:.2f} | RSI: {rsi:.2f} | MA20: ${ma20:.2f}\n"
 
-    if alerts:
-full_msg = msg + "\n✅ 감시 완료: 주가 조건 충족됨!"
-🚨 진입 신호 감지:
-" + "
-".join(alerts)
-        send_telegram(full_msg)
+    signal_triggered = False
+    if rsi < 35 and current_price < ma20:
+        msg += "[매수 타점 포착 - RSI < 35 & 종가 < MA20]\n"
+        signal_triggered = True
+    elif rsi > 65 and current_price > ma20:
+        msg += "[매도 타점 포착 - RSI > 65 & 종가 > MA20]\n"
+        signal_triggered = True
+
+    if signal_triggered:
+        full_msg = msg + "[진입 신호 감지!]"
+        send_telegram_message(full_msg)
 
 if __name__ == "__main__":
-    while True:
-        for symbol in TICKERS:
-            check_conditions(symbol)
-        time.sleep(3600)
+    TICKERS = ["TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "ORCL", "AVGO"]
+    for ticker in TICKERS:
+        check_signal(ticker)
