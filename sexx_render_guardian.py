@@ -6,8 +6,8 @@ from flask import Flask
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv(""7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"")
+TELEGRAM_CHAT_ID = os.getenv("7733010521")
 WATCHLIST = ["TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL", "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"]
 
 def send_telegram_message(message):
