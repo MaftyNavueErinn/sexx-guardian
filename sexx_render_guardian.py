@@ -1,4 +1,5 @@
-
+# Updated full script with patched get_price and improved error handling
+sexx_render_guardian_code = """
 import os
 import time
 import requests
@@ -85,12 +86,14 @@ def analyze_ticker(ticker):
             signals.append("🔥 거래량 급등")
 
         if signals:
-            msg = f"[{ticker}] 시그널 발생\n"                   f"종가: {close:.2f}\nRSI: {rsi:.2f}\nMA20: {ma20:.2f}, MA60: {ma60:.2f}\n"                   + "\n".join(signals)
+            msg = f"[{ticker}] 시그널 발생\\n" \
+                  f"종가: {close:.2f}\\nRSI: {rsi:.2f}\\nMA20: {ma20:.2f}, MA60: {ma60:.2f}\\n" \
+                  + "\\n".join(signals)
             send_telegram(msg)
 
     except Exception as e:
         print(f"❌ 분석 실패 - {ticker}: {e}")
-        send_telegram(f"❌ 분석 실패: {ticker}\n에러: {e}")
+        send_telegram(f"❌ 분석 실패: {ticker}\\n에러: {e}")
 
 def main_loop():
     while True:
@@ -102,3 +105,11 @@ def main_loop():
 
 if __name__ == "__main__":
     main_loop()
+"""
+
+# Save it to the correct filename
+with open("/mnt/data/sexx_render_guardian.py", "w") as f:
+    f.write(sexx_render_guardian_code)
+
+"/mnt/data/sexx_render_guardian.py"
+
