@@ -1,4 +1,5 @@
-flask==2.3.2
-yfinance==0.2.36
-pandas==2.2.1
-requests==2.31.0
+yfinance
+pytz
+requests
+flask
+ta
