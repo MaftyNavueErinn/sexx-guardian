@@ -9,7 +9,7 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ 테러그램 정보
+# ✅ 텔레그램 정보
 _TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 _CHAT_ID = "7733010521"
 
@@ -20,7 +20,8 @@ TICKERS = [
 ]
 
 # ✅ RSI 기준값
-RSI_THRESHOLD = 40
+RSI_LOW = 40
+RSI_HIGH = 70
 
 # ✅ 수동 Max Pain
 MAX_PAIN = {
@@ -41,16 +42,16 @@ MAX_PAIN = {
     "ARM": 145
 }
 
-# ✅ 테램 메시지 전송
+# ✅ 텔레그램 메시지 전송
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{_TOKEN}/sendMessage"
     payload = {"chat_id": _CHAT_ID, "text": text}
     try:
         response = requests.post(url, json=payload)
         if not response.ok:
-            print(f"❌ 테램 전송 실패: {response.text}")
+            print(f"❌ 텔레그램 전송 실패: {response.text}")
     except Exception as e:
-        print(f"❌ 테램 전송 오류: {e}")
+        print(f"❌ 텔레그램 전송 오류: {e}")
 
 # ✅ RSI 계산 함수
 def get_rsi(close_prices, period=14):
@@ -63,8 +64,7 @@ def get_rsi(close_prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ✅ 종목별 감시 로직
-
+# ✅ 알림 체크 함수
 def check_alerts():
     for ticker in TICKERS:
         try:
@@ -75,27 +75,42 @@ def check_alerts():
 
             close = df["Close"]
             volume = df["Volume"]
-
             rsi = get_rsi(close).iloc[-1]
             price = close.iloc[-1]
+            ma20 = close.rolling(20).mean().iloc[-1]
             volume_today = volume.iloc[-1]
-            volume_yesterday = volume.iloc[-2]
             volume_ma5 = volume.rolling(5).mean().iloc[-1]
 
-            # RSI 거리
-            if rsi < RSI_THRESHOLD:
-                msg = (
-                    f"⚠️ [{ticker}] RSI 과매도 ({rsi:.2f}) 감지!\n"
-                    f"현재가: ${price:.2f} / Max Pain: ${MAX_PAIN.get(ticker, 'N/A')}"
-                )
-                send_telegram_message(msg)
+            alerts = []
 
-            # 거래량 까다지
-            if volume_today > volume_yesterday * 2 and volume_today > volume_ma5 * 2:
-                msg = (
-                    f"🔥 [{ticker}] 거래\uub7c9 까다지!\n"
-                    f"오른가: ${price:.2f} / 거래\uub7c9: {volume_today:,}"
-                )
+            # RSI 과매도
+            if rsi < RSI_LOW:
+                alerts.append(f"⚠️ RSI 과매도 ({rsi:.2f})")
+
+            # RSI 과매수
+            if rsi > RSI_HIGH:
+                alerts.append(f"🚨 RSI 과매수 ({rsi:.2f})")
+
+            # MA20 돌파 / 이탈
+            if price > ma20:
+                alerts.append(f"📈 MA20 돌파 (${ma20:.2f})")
+            elif price < ma20:
+                alerts.append(f"📉 MA20 이탈 (${ma20:.2f})")
+
+            # Max Pain 대비 ±5% 이상 → 청산각
+            max_pain = MAX_PAIN.get(ticker)
+            if max_pain:
+                gap_percent = abs(price - max_pain) / max_pain * 100
+                if gap_percent >= 5:
+                    alerts.append(f"💀 청산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
+
+            # 거래량 급등
+            if volume_today > volume_ma5 * 2:
+                alerts.append(f"🔥 거래량 급등: {volume_today:,} / 평균 {volume_ma5:,.0f}")
+
+            # 알림 전송
+            if alerts:
+                msg = f"🔍 [{ticker}] 감지됨\n" + "\n".join(alerts)
                 send_telegram_message(msg)
 
         except Exception as e:
