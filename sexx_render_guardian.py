@@ -4,6 +4,11 @@ import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
+import time
+import warnings
+
+# ⚠️ FutureWarning 제거
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 app = Flask(__name__)
 
@@ -27,6 +32,8 @@ def calculate_rsi(prices, window=14):
 
 def get_stock_signal(ticker):
     try:
+        time.sleep(1.2)  # ✅ Render 서버 부하 방지
+
         df = yf.download(ticker, period="20d", interval="1d", progress=False)
         df.dropna(inplace=True)
         if len(df) < 20:
