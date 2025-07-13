@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# sexx_render_guardian.py의 완전한 실전 풀옵션 버전
+# 맥스페인 제거 + RSI 과매수(>65) + MA20 이탈(<MA20) 포함해서 수정된 코드
 code = """
 import time
 import yfinance as yf
@@ -10,7 +10,6 @@ from flask import Flask, request
 from datetime import datetime
 import logging
 import requests
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -21,8 +20,6 @@ TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
-
-HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
@@ -36,18 +33,6 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"텔레그램 전송 실패: {e}")
         return None
-
-def get_max_pain(ticker):
-    try:
-        url = f"https://www.marketchameleon.com/Overview/{ticker}/OptionChain/"
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        text = soup.find("td", string="Max Pain")
-        if text and text.find_next_sibling("td"):
-            return text.find_next_sibling("td").text.strip()
-    except:
-        pass
-    return "N/A"
 
 @app.route("/ping")
 def ping():
@@ -78,20 +63,25 @@ def ping():
             close_last = df["Close"].iloc[-1]
             ma20_last = df["MA20"].iloc[-1]
 
-            max_pain = get_max_pain(ticker)
-
             alert_triggered = False
             message = f"📊 {ticker} 분석 결과\\n"
 
             if pd.notna(rsi_last) and rsi_last < 40:
                 message += f"🟡 RSI 과매도: {rsi_last:.2f}\\n"
                 alert_triggered = True
-            if pd.notna(close_last) and pd.notna(ma20_last) and close_last > ma20_last:
-                message += f"🟢 종가 > MA20 돌파: {close_last:.2f} > {ma20_last:.2f}\\n"
+            elif pd.notna(rsi_last) and rsi_last > 65:
+                message += f"🔴 RSI 과매수: {rsi_last:.2f}\\n"
                 alert_triggered = True
 
+            if pd.notna(close_last) and pd.notna(ma20_last):
+                if close_last > ma20_last:
+                    message += f"🟢 MA20 돌파: 종가 {close_last:.2f} > MA20 {ma20_last:.2f}\\n"
+                    alert_triggered = True
+                elif close_last < ma20_last:
+                    message += f"🔻 MA20 이탈: 종가 {close_last:.2f} < MA20 {ma20_last:.2f}\\n"
+                    alert_triggered = True
+
             if alert_triggered:
-                message += f"📍 Max Pain: {max_pain}"
                 messages.append(message)
 
         except Exception as e:
