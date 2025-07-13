@@ -55,7 +55,7 @@ def get_stock_signal(ticker):
         elif current_close < current_ma20:
             message += "🔴 팔아!!! (MA20 운지)"
         else:
-            message += "❓ 관마관"
+            message += "❓ 관망각"
 
         return message
     except Exception as e:
@@ -73,7 +73,7 @@ def send_telegram_alert(message):
 def ping():
     run_alert = request.args.get("run", default="0") == "1"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"📡 조건 충초 종목 ({now})"
+    full_message = f"📡 조건 충족 종목 ({now})"
 
     for ticker in TICKERS:
         result = get_stock_signal(ticker)
