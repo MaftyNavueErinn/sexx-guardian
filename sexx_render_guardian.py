@@ -17,67 +17,70 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-def calculate_rsi(data, period=14):
-    delta = data.diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(window=period).mean()
-    avg_loss = pd.Series(loss).rolling(window=period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
 
 def send_telegram_alert(message):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
     try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        payload = {"chat_id": TG_CHAT_ID, "text": message}
+        requests.post(url, json=payload)
     except Exception as e:
-        logging.error(f"\u274c\ufe0f 템레그램 전송 실패: {e}")
+        logging.error(f"텔레그램 전송 실패: {e}")
+
 
 @app.route("/ping")
 def ping():
     run_flag = request.args.get("run")
     if run_flag != "1":
-        return "Pong"
+        return "pong"
 
     results = []
 
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            close_prices = df["Close"]
-            ma20 = close_prices.rolling(window=20).mean()
-            rsi = calculate_rsi(close_prices)
+            if df.empty or len(df) < 20:
+                raise ValueError("데이터 부족")
 
-            latest_close = close_prices.iloc[-1]
-            latest_ma20 = ma20.iloc[-1]
-            latest_rsi = rsi.iloc[-1]
+            close = df["Close"]
+            delta = close.diff()
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
 
-            action = []
+            avg_gain = pd.Series(gain).rolling(window=14).mean()
+            avg_loss = pd.Series(loss).rolling(window=14).mean()
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
 
-            if latest_rsi > 65:
-                action.append("\ud83d\udd34 팔아!!! (RSI>65)")
-            elif latest_rsi < 35:
-                action.append("\ud83d\udfe2 사!!! (RSI<35)")
+            ma20 = close.rolling(window=20).mean()
 
-            if latest_close > latest_ma20:
-                action.append("\ud83d\udfe2 사!!! (MA20 돌파)")
-            elif latest_close < latest_ma20:
-                action.append("\ud83d\udd34 팔아!!! (MA20 이탁)")
+            last_close = close.iloc[-1]
+            last_ma20 = ma20.iloc[-1]
+            last_rsi = rsi.iloc[-1]
 
-            results.append(f"\n\ud83d\udcc8 <b>{ticker}</b>\n종가: ${latest_close:.2f} / MA20: ${latest_ma20:.2f} / RSI: {latest_rsi:.2f}\n" + "\n".join(action))
+            signals = []
+
+            if last_rsi > 65:
+                signals.append("\U0001F534 팔아!!! (RSI>65)")
+            elif last_rsi < 35:
+                signals.append("\U0001F7E2 사!!! (RSI<35)")
+            else:
+                signals.append("- RSI 평범")
+
+            if last_close > last_ma20:
+                signals.append("\U0001F7E2 사!!! (MA20 돌파)")
+            elif last_close < last_ma20:
+                signals.append("\U0001F534 팔아!!! (MA20 이탈)")
+            else:
+                signals.append("- MA20 근처")
+
+            result = f"\n\U0001F4C8 {ticker}\n종가: ${last_close:.2f} / MA20: ${last_ma20:.2f} / RSI: {last_rsi:.2f}\n" + "\n".join(signals)
+            results.append(result)
 
         except Exception as e:
-            results.append(f"\n\u274c {ticker} 처리 중 에러: {e}")
+            results.append(f"\n❌ {ticker} 처리 중 에러: {e}")
 
-    if results:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        final_message = f"\ud83d\udce1 <b>\uc870건 충출 종목</b> ({now})\n" + "".join(results)
-        send_telegram_alert(final_message)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_message = f"\U0001F4E1 조건 충족 종목 ({now})" + "".join(results)
+    send_telegram_alert(full_message)
 
-    return "Done"
+    return "pong"
