@@ -1,12 +1,9 @@
-from pathlib import Path
 
-# 수정된 감시 코드 (에러 수정 반영 완료)
-fixed_code = """
 import time
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from flask import Flask, request
+from flask import Flask
 from datetime import datetime
 import logging
 import requests
@@ -21,69 +18,53 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-def send_telegram_alert(message):
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message
-    }
-    response = requests.post(url, json=payload)
-    return response
+    data = {"chat_id": TG_CHAT_ID, "text": message}
+    try:
+        response = requests.post(url, data=data)
+        if response.status_code != 200:
+            print("Failed to send message:", response.text)
+    except Exception as e:
+        print("Exception occurred while sending message:", str(e))
 
 @app.route("/ping")
 def ping():
-    run_check = request.args.get("run") == "1"
-    if not run_check:
-        return "Ping received. Append ?run=1 to execute."
-
-    messages = []
-
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-
+            df = df.dropna()
             if df.empty:
-                messages.append(f"❌ {ticker} 데이터 없음")
+                print(f"{ticker} 데이터 없음")
                 continue
 
+            df["RSI"] = calculate_rsi(df)
             df["MA20"] = df["Close"].rolling(window=20).mean()
-            delta = df["Close"].diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            avg_gain = gain.rolling(window=14).mean()
-            avg_loss = loss.rolling(window=14).mean()
-            rs = avg_gain / avg_loss
-            df["RSI"] = 100 - (100 / (1 + rs))
 
-            if df["RSI"].isna().all() or df["Close"].isna().all() or df["MA20"].isna().all():
-                messages.append(f"❌ {ticker} 계산 불가 (결측치)")
-                continue
+            rsi = df["RSI"].iloc[-1]
+            close = df["Close"].iloc[-1]
+            ma20 = df["MA20"].iloc[-1]
 
-            rsi_last = df["RSI"].iloc[-1]
-            close_last = df["Close"].iloc[-1]
-            ma20_last = df["MA20"].iloc[-1]
-
-            if pd.isna(rsi_last) or pd.isna(close_last) or pd.isna(ma20_last):
-                messages.append(f"❌ {ticker} 최종값 결측치 존재")
-                continue
-
-            if (rsi_last < 40) or (close_last > ma20_last):
-                messages.append(f"📈 {ticker} ALERT\\nRSI: {rsi_last:.2f}\\nClose: {close_last:.2f}\\nMA20: {ma20_last:.2f}")
+            if rsi <= 40:
+                send_telegram_message(f"📉 {ticker} RSI 40 이하! 진입 타점 감지됨
+현재 RSI: {rsi:.2f}, 종가: ${close:.2f}")
+            elif close > ma20:
+                send_telegram_message(f"📈 {ticker} 종가가 MA20 상향 돌파!
+현재 종가: ${close:.2f}, MA20: ${ma20:.2f}")
 
         except Exception as e:
-            messages.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
+            send_telegram_message(f"❌ {ticker} 처리 중 에러: {str(e)}")
+            print(f"Error processing {ticker}: {e}")
 
-    if messages:
-        send_telegram_alert("\\n\\n".join(messages))
-        return "Alerts sent!"
-    else:
-        return "No alert conditions met."
+    return "Ping complete"
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=10000)
-"""
-
-# 저장
-path = Path("/mnt/data/sexx_render_guardian_FIXED_FINAL_VER.py")
-path.write_text(fixed_code)
-path
+    app.run(debug=True, port=5000)
