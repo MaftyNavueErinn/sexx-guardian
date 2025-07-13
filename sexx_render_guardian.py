@@ -6,7 +6,7 @@ from flask import Flask, request
 from datetime import datetime
 import logging
 import requests
-from pathlib import Path
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -18,93 +18,84 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-RSI_PERIOD = 14
-MA_PERIOD = 20
-RSI_OVERBOUGHT = 70
-RSI_OVERSOLD = 40
-
-
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {"chat_id": TG_CHAT_ID, "text": message}
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message
+    }
     try:
-        requests.post(url, data=data)
+        requests.post(url, data=payload)
     except Exception as e:
-        logging.error(f"Telegram send error: {e}")
+        print(f"텔레그램 전송 실패: {e}")
 
+def get_max_pain(ticker):
+    try:
+        url = f"https://www.marketchameleon.com/Overview/{ticker}/OptionChain/"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        text = soup.find("td", string="Max Pain")
+        if text and text.find_next_sibling("td"):
+            return text.find_next_sibling("td").text.strip()
+    except Exception as e:
+        print(f"[MaxPain] {ticker} 긁기 실패: {e}")
+    return "N/A"
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    up = delta.clip(lower=0)
-    down = -1 * delta.clip(upper=0)
-    ema_up = up.ewm(com=period - 1, adjust=False).mean()
-    ema_down = down.ewm(com=period - 1, adjust=False).mean()
-    rs = ema_up / ema_down
-    return 100 - (100 / (1 + rs))
-
-
-def analyze_stock(ticker):
-    df = yf.download(ticker, period="20d", interval="1d", progress=False)
-    if df.empty or len(df) < RSI_PERIOD:
-        return None
-
-    df['RSI'] = calculate_rsi(df['Close'], RSI_PERIOD)
-    df['MA20'] = df['Close'].rolling(window=MA_PERIOD).mean()
-    rsi = df['RSI'].iloc[-1]
-    close = df['Close'].iloc[-1]
-    ma20 = df['MA20'].iloc[-1]
-
-    ma_slope = df['MA20'].iloc[-1] - df['MA20'].iloc[-2]
-
-    conditions = []
-    if rsi < RSI_OVERSOLD:
-        conditions.append("📉 RSI 과매도")
-    if rsi > RSI_OVERBOUGHT:
-        conditions.append("📈 RSI 과매수")
-    if close < ma20:
-        conditions.append("📉 종가 < MA20")
-    if close > ma20:
-        conditions.append("📈 종가 > MA20")
-    if ma_slope < 0:
-        conditions.append("🔻 MA20 하락 중")
-
-    if conditions:
-        msg = f"[{ticker}] 조건 감지됨!\nRSI: {rsi:.2f}, 종가: {close:.2f}, MA20: {ma20:.2f}\n" + ", ".join(conditions)
-        return msg
-    return None
-
+def calculate_rsi(data, window=14):
+    delta = data.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 @app.route("/ping")
 def ping():
-    run_param = request.args.get("run", default="0")
-    triggered = False
+    triggered = []
 
-    if run_param == "1":
-        triggered = True
+    for ticker in TICKERS:
+        try:
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            if df.empty or len(df) < 20:
+                continue
 
-    if triggered:
-        alerts = []
-        for ticker in TICKERS:
-            try:
-                result = analyze_stock(ticker)
-                if result:
-                    alerts.append(result)
-            except Exception as e:
-                logging.error(f"Error analyzing {ticker}: {e}")
+            df["RSI"] = calculate_rsi(df["Close"])
+            df["MA20"] = df["Close"].rolling(window=20).mean()
 
-        if alerts:
-            final_msg = "\n\n".join(alerts)
-            send_telegram_alert(f"🚨 자동 감시 알림 🚨\n{final_msg}")
-            return {"status": "alert_sent", "alerts": alerts}
+            rsi = df["RSI"].iloc[-1]
+            close = df["Close"].iloc[-1]
+            ma20 = df["MA20"].iloc[-1]
+            ma_drop = df["MA20"].iloc[-1] < df["MA20"].iloc[-2]
 
-    return {"status": "ok"}
+            signal = []
 
+            if rsi < 35 and close < ma20:
+                signal.append("📉 과매도 + MA20 아래 (진입각)")
+            elif rsi > 65 and close > ma20:
+                signal.append("🚨 과매수 + MA20 위 (청산 신호)")
+            elif rsi < 35:
+                signal.append("🔻 RSI 과매도")
+            elif rsi > 65:
+                signal.append("🔺 RSI 과매수")
+
+            if close > ma20:
+                signal.append("📈 MA20 상단")
+            elif close < ma20:
+                signal.append("📉 MA20 하단")
+
+            if ma_drop:
+                signal.append("🔻 MA20 하락세")
+
+            if signal:
+                max_pain = get_max_pain(ticker)
+                message = f"[{ticker}]\n가격: ${close:.2f}\nRSI: {rsi:.2f} / MA20: {ma20:.2f}\n맥스페인: {max_pain}\n신호: {' | '.join(signal)}"
+                send_telegram_alert(message)
+                triggered.append(ticker)
+
+        except Exception as e:
+            send_telegram_alert(f"❌ {ticker} 처리 중 에러: {e}")
+
+    return f"✅ 감시 완료: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 트리거: {', '.join(triggered)}"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
-
-# 파일 존재 여부 확인용 코드 추가 (에러 방지용)
-code = "# Dummy code to satisfy file write logic"
-path = Path("/mnt/data/sexx_render_guardian.py")
-path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text(code)
+    app.run(debug=True, port=10000)
