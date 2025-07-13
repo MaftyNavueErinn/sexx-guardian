@@ -18,6 +18,8 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {
@@ -25,77 +27,86 @@ def send_telegram_alert(message):
         "text": message
     }
     try:
-        requests.post(url, data=payload)
+        response = requests.post(url, json=payload)
+        return response
     except Exception as e:
-        print(f"텔레그램 전송 실패: {e}")
+        print(f"\u274c 텔레그램 전송 실패: {e}")
+        return None
 
 def get_max_pain(ticker):
     try:
         url = f"https://www.marketchameleon.com/Overview/{ticker}/OptionChain/"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        res = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         text = soup.find("td", string="Max Pain")
         if text and text.find_next_sibling("td"):
             return text.find_next_sibling("td").text.strip()
-    except Exception as e:
-        print(f"[MaxPain] {ticker} 긁기 실패: {e}")
+    except:
+        pass
     return "N/A"
-
-def calculate_rsi(data, window=14):
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
 
 @app.route("/ping")
 def ping():
-    triggered = []
+    run_check = request.args.get("run") == "1"
+    if not run_check:
+        return "Ping received. Append ?run=1 to execute."
+
+    messages = []
 
     for ticker in TICKERS:
         try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            df = yf.download(ticker, period="20d", interval="1d", progress=False, auto_adjust=False)
+
             if df.empty or len(df) < 20:
+                messages.append(f"⚠️ {ticker} 데이터 부족")
                 continue
 
-            df["RSI"] = calculate_rsi(df["Close"])
             df["MA20"] = df["Close"].rolling(window=20).mean()
+            delta = df["Close"].diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            avg_gain = gain.rolling(window=14).mean()
+            avg_loss = loss.rolling(window=14).mean()
+            rs = avg_gain / avg_loss
+            df["RSI"] = 100 - (100 / (1 + rs))
 
-            rsi = df["RSI"].iloc[-1]
-            close = df["Close"].iloc[-1]
-            ma20 = df["MA20"].iloc[-1]
-            ma_drop = df["MA20"].iloc[-1] < df["MA20"].iloc[-2]
+            rsi_last = df["RSI"].iloc[-1]
+            close_last = df["Close"].iloc[-1]
+            ma20_last = df["MA20"].iloc[-1]
 
-            signal = []
+            max_pain = get_max_pain(ticker)
 
-            if rsi < 35 and close < ma20:
-                signal.append("📉 과매도 + MA20 아래 (진입각)")
-            elif rsi > 65 and close > ma20:
-                signal.append("🚨 과매수 + MA20 위 (청산 신호)")
-            elif rsi < 35:
-                signal.append("🔻 RSI 과매도")
-            elif rsi > 65:
-                signal.append("🔺 RSI 과매수")
+            alert_triggered = False
+            message = f"📊 {ticker} 분석 결과\n"
 
-            if close > ma20:
-                signal.append("📈 MA20 상단")
-            elif close < ma20:
-                signal.append("📉 MA20 하단")
+            if pd.notna(rsi_last):
+                if rsi_last.item() < 40:
+                    message += f"🟡 RSI 과매도: {rsi_last:.2f}\n"
+                    alert_triggered = True
+                elif rsi_last.item() > 65:
+                    message += f"🔴 RSI 과매수: {rsi_last:.2f}\n"
+                    alert_triggered = True
 
-            if ma_drop:
-                signal.append("🔻 MA20 하락세")
+            if pd.notna(close_last) and pd.notna(ma20_last):
+                if close_last.item() > ma20_last.item():
+                    message += f"🟢 종가 > MA20 돌파: {close_last:.2f} > {ma20_last:.2f}\n"
+                    alert_triggered = True
+                elif close_last.item() < ma20_last.item():
+                    message += f"🔶 종가 < MA20 초련: {close_last:.2f} < {ma20_last:.2f}\n"
+                    alert_triggered = True
 
-            if signal:
-                max_pain = get_max_pain(ticker)
-                message = f"[{ticker}]\n가격: ${close:.2f}\nRSI: {rsi:.2f} / MA20: {ma20:.2f}\n맥스페인: {max_pain}\n신호: {' | '.join(signal)}"
-                send_telegram_alert(message)
-                triggered.append(ticker)
+            if alert_triggered:
+                message += f"🔹 Max Pain: {max_pain}"
+                messages.append(message)
 
         except Exception as e:
-            send_telegram_alert(f"❌ {ticker} 처리 중 에러: {e}")
+            messages.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
 
-    return f"✅ 감시 완료: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 트리거: {', '.join(triggered)}"
+    if messages:
+        send_telegram_alert("\n\n".join(messages))
+        return "Alerts sent!"
+    else:
+        return "No alert conditions met."
 
 if __name__ == "__main__":
-    app.run(debug=True, port=10000)
+    app.run(debug=True, host="0.0.0.0", port=10000)
