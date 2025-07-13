@@ -19,63 +19,79 @@ TICKERS = [
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": TG_CHAT_ID, "text": message}
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message
+    }
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        print("\ud1b5\uc2e0 \ecec\x9eec\x9e\x90\ubaa9 \uc804\uc1a1 \uc624\ub958:", e)
+        print(f"텔레그램 전송 에러: {e}")
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
 
-    avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
-
-    rs = avg_gain / avg_loss
+def calculate_rsi(close, window=14):
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def get_rsi_ma_signals():
-    signals = []
-    for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            df.dropna(inplace=True)
-            df["RSI"] = calculate_rsi(df["Close"])
-            df["MA20"] = df["Close"].rolling(window=20).mean()
 
-            latest = df.iloc[-1]
-            rsi = latest["RSI"]
-            close = latest["Close"]
-            ma20 = latest["MA20"]
+def check_conditions(ticker):
+    df = yf.download(ticker, period="30d", interval="1d", progress=False)
+    if df.empty or len(df) < 20:
+        return None
 
-            overbought = rsi > 70
-            oversold = rsi < 35
-            ma20_cross_up = close > ma20 and df["Close"].iloc[-2] < df["MA20"].iloc[-2]
-            ma20_cross_down = close < ma20 and df["Close"].iloc[-2] > df["MA20"].iloc[-2]
+    df.dropna(inplace=True)
+    close = df["Close"]
+    ma20 = close.rolling(window=20).mean()
+    rsi = calculate_rsi(close)
 
-            if oversold or ma20_cross_up:
-                signals.append(f"🟢 {ticker} 진입각 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
-            elif overbought or ma20_cross_down:
-                signals.append(f"🔴 {ticker} 과엽 경고 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
-        except Exception as e:
-            print(f"{ticker} 오류: {e}")
-    return signals
+    latest_close = close.iloc[-1]
+    latest_ma20 = ma20.iloc[-1]
+    latest_rsi = rsi.iloc[-1]
+
+    message_parts = []
+    if latest_rsi < 35:
+        message_parts.append(f"📉 {ticker}: RSI 과매도 ({latest_rsi:.2f})")
+    elif latest_rsi > 65:
+        message_parts.append(f"📈 {ticker}: RSI 과매수 ({latest_rsi:.2f})")
+
+    if latest_close < latest_ma20:
+        message_parts.append(f"⬇️ 종가 < MA20 ({latest_close:.2f} < {latest_ma20:.2f})")
+    elif latest_close > latest_ma20:
+        message_parts.append(f"⬆️ 종가 > MA20 ({latest_close:.2f} > {latest_ma20:.2f})")
+
+    if message_parts:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        full_msg = f"[알림: {ticker}]\n" + "\n".join(message_parts) + f"\n⏰ {now}"
+        return full_msg
+    return None
+
 
 @app.route("/ping")
 def ping():
-    if request.args.get("run") == "1":
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        signals = get_rsi_ma_signals()
-        if signals:
-            msg = f"📈 감시 트리거 발생! ({now})\n\n" + "\n".join(signals)
-            send_telegram_alert(msg)
+    run_flag = request.args.get("run")
+    if run_flag == "1":
+        alerts = []
+        for ticker in TICKERS:
+            try:
+                alert = check_conditions(ticker)
+                if alert:
+                    alerts.append(alert)
+                    time.sleep(1)
+            except Exception as e:
+                logging.error(f"{ticker} 처리 중 오류: {e}")
+
+        if alerts:
+            for msg in alerts:
+                send_telegram_alert(msg)
+            return "✅ 알림 전송 완료"
         else:
-            print(f"{now} - 조건 마출 종목 없음.")
-        return "Ping executed"
-    return "Ping OK"
+            return "😶 조건 만족 종목 없음"
+    return "pong"
+
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=10000)
