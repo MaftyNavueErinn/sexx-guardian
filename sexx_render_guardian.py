@@ -17,8 +17,8 @@ TICKERS = [
 
 def calculate_rsi(prices, window=14):
     delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).fillna(0)
-    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(window=window).mean()
     avg_loss = loss.rolling(window=window).mean()
     rs = avg_gain / avg_loss
@@ -29,7 +29,7 @@ def get_stock_signal(ticker):
     try:
         df = yf.download(ticker, period="2d", interval="5m", progress=False)
         df.dropna(inplace=True)
-        if len(df) < 50:
+        if len(df) < 20:
             return f"❌ {ticker} 데이터 부족"
 
         close = df['Close']
@@ -40,7 +40,7 @@ def get_stock_signal(ticker):
         current_ma20 = ma20.iloc[-1]
         current_rsi = rsi.iloc[-1]
 
-        if np.isnan(current_ma20) or np.isnan(current_rsi):
+        if pd.isna(current_ma20) or pd.isna(current_rsi):
             return f"❌ {ticker} 지표 계산 불가"
 
         message = f"\n\n📈 {ticker}\n"
@@ -62,16 +62,12 @@ def get_stock_signal(ticker):
         return f"❌ {ticker} 처리 중 에러: {str(e)}"
 
 def send_telegram_alert(message):
-    try:
-        safe_message = message.encode('utf-8', 'ignore').decode('utf-8')
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": TG_CHAT_ID,
-            "text": safe_message
-        }
-        requests.post(url, data=payload)
-    except Exception as e:
-        print("텔레그램 전송 에러:", e)
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message
+    }
+    requests.post(url, data=payload)
 
 @app.route("/ping")
 def ping():
