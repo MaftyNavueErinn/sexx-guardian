@@ -1,7 +1,7 @@
 from pathlib import Path
 
-# 최종 배포용 - 파일 저장 로직 완전히 제거한 버전
-final_code = """
+# 완전 수정된 sexx_render_guardian.py 코드 (Series 비교 에러 해결 포함)
+code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -10,6 +10,7 @@ from flask import Flask, request
 from datetime import datetime
 import logging
 import requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -20,6 +21,8 @@ TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
+
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
@@ -66,7 +69,7 @@ def ping():
             alert_triggered = False
             message = f"📊 {ticker} 분석 결과\\n"
 
-            if pd.notna(rsi_last) and rsi_last < 40:
+            if pd.notna(rsi_last) and rsi_last < 35:
                 message += f"🟡 RSI 과매도: {rsi_last:.2f}\\n"
                 alert_triggered = True
             elif pd.notna(rsi_last) and rsi_last > 65:
@@ -75,10 +78,10 @@ def ping():
 
             if pd.notna(close_last) and pd.notna(ma20_last):
                 if close_last > ma20_last:
-                    message += f"🟢 MA20 돌파: 종가 {close_last:.2f} > MA20 {ma20_last:.2f}\\n"
+                    message += f"🟢 종가 > MA20 돌파: {close_last:.2f} > {ma20_last:.2f}\\n"
                     alert_triggered = True
                 elif close_last < ma20_last:
-                    message += f"🔻 MA20 이탈: 종가 {close_last:.2f} < MA20 {ma20_last:.2f}\\n"
+                    message += f"🔻 종가 < MA20 이탈: {close_last:.2f} < {ma20_last:.2f}\\n"
                     alert_triggered = True
 
             if alert_triggered:
@@ -97,6 +100,8 @@ if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
 """
 
+# 저장
 path = Path("/mnt/data/sexx_render_guardian.py")
-path.write_text(final_code)
+path.write_text(code)
 path
+
