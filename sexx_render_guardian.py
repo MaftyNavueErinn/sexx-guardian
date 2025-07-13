@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# 수정된 코드 - Series 비교 에러 해결 포함
+# 수정된 코드 내용을 sexx_render_guardian.py로 저장
 code = """
 import time
 import yfinance as yf
@@ -75,6 +75,7 @@ if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
 """
 
-path = Path("/mnt/data/sexx_render_guardian_FIXED_FINAL_VER.py")
+# 저장 경로 및 파일명 지정
+path = Path("/mnt/data/sexx_render_guardian.py")
 path.write_text(code)
 path
