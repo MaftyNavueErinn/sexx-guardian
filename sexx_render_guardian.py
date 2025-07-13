@@ -1,7 +1,7 @@
 from pathlib import Path
 
-# 수정된 감시 코드
-code = """
+# 수정된 감시 코드 (에러 수정 반영 완료)
+fixed_code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -41,6 +41,11 @@ def ping():
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
+
+            if df.empty:
+                messages.append(f"❌ {ticker} 데이터 없음")
+                continue
+
             df["MA20"] = df["Close"].rolling(window=20).mean()
             delta = df["Close"].diff()
             gain = delta.where(delta > 0, 0)
@@ -50,9 +55,17 @@ def ping():
             rs = avg_gain / avg_loss
             df["RSI"] = 100 - (100 / (1 + rs))
 
+            if df["RSI"].isna().all() or df["Close"].isna().all() or df["MA20"].isna().all():
+                messages.append(f"❌ {ticker} 계산 불가 (결측치)")
+                continue
+
             rsi_last = df["RSI"].iloc[-1]
             close_last = df["Close"].iloc[-1]
             ma20_last = df["MA20"].iloc[-1]
+
+            if pd.isna(rsi_last) or pd.isna(close_last) or pd.isna(ma20_last):
+                messages.append(f"❌ {ticker} 최종값 결측치 존재")
+                continue
 
             if (rsi_last < 40) or (close_last > ma20_last):
                 messages.append(f"📈 {ticker} ALERT\\nRSI: {rsi_last:.2f}\\nClose: {close_last:.2f}\\nMA20: {ma20_last:.2f}")
@@ -70,7 +83,7 @@ if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
 """
 
-# 저장 경로
+# 저장
 path = Path("/mnt/data/sexx_render_guardian_FIXED_FINAL_VER.py")
-path.write_text(code)
+path.write_text(fixed_code)
 path
