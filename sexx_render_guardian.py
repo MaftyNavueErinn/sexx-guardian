@@ -21,61 +21,63 @@ logging.basicConfig(level=logging.INFO)
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+    data = {"chat_id": TG_CHAT_ID, "text": message}
     try:
-        requests.post(url, data=payload)
+        requests.post(url, data=data)
     except Exception as e:
-        logging.error(f"텔레그램 에러: {e}")
+        logging.error(f"텔레그램 전송 실패: {e}")
 
+def get_rsi(data, period=14):
+    delta = data['Close'].diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
 
-def calculate_rsi(data, period=14):
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+def check_signals():
+    alert_list = []
 
-@app.route("/ping")
-def ping():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logging.info(f"🔔 감시 시작됨: {now}")
-    
-    run_flag = request.args.get("run", default="0") == "1"
-
-    alerts = []
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            if df.empty or len(df) < 20:
+            if df.empty or len(df) < 15:
                 continue
 
-            close = df["Close"]
-            rsi = calculate_rsi(close).iloc[-1]
-            price = close.iloc[-1]
-            ma20 = close.rolling(window=20).mean().iloc[-1]
+            df['RSI'] = get_rsi(df)
+            ma20 = df['Close'].rolling(window=20).mean()
+            rsi = df['RSI'].iloc[-1]
+            close = df['Close'].iloc[-1]
+            ma20_last = ma20.iloc[-1]
 
-            if rsi < 40 and price < ma20:
-                alerts.append(f"<b>{ticker}</b> 📉 <b>사!!</b> (종가: ${price:.2f}, RSI: {rsi:.2f}, MA20: ${ma20:.2f})")
-            elif rsi > 65 and price > ma20:
-                alerts.append(f"<b>{ticker}</b> 🚨 <b>팔아!!</b> (종가: ${price:.2f}, RSI: {rsi:.2f}, MA20: ${ma20:.2f})")
+            # 사!! 조건
+            if rsi < 40 and close < ma20_last:
+                alert_list.append(f"[사!!] {ticker} - RSI: {rsi:.2f}, 종가: {close:.2f}, MA20: {ma20_last:.2f}")
+            # 팔아!! 조건
+            elif rsi > 65 and close > ma20_last:
+                alert_list.append(f"[팔아!!] {ticker} - RSI: {rsi:.2f}, 종가: {close:.2f}, MA20: {ma20_last:.2f}")
+
         except Exception as e:
-            logging.error(f"❌ {ticker} 처리 중 에러: {e}")
+            logging.error(f"{ticker} 처리 중 에러: {e}")
 
-    if run_flag:
+    return alert_list
+
+@app.route("/ping")
+def ping():
+    if request.args.get("run") == "1":
+        logging.info("/ping 호출됨 - 감시 루틴 시작")
+        alerts = check_signals()
         if alerts:
             message = "\n".join(alerts)
+            send_telegram_alert("🚨 알림 요약 🚨\n" + message)
         else:
-            message = f"🔍 조건 충족 종목 없음. {now}"
-        send_telegram_alert(message)
-
-    return f"🔔 감시 시작됨: {now}"
-
+            send_telegram_alert("✅ 감시 완료 - 조건 해당 없음")
+        return "Ping complete"
+    return "OK"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, host="0.0.0.0", port=10000)
