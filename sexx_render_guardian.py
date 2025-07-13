@@ -9,7 +9,7 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ 템레그램 정보
+# ✅ 텔레그램 정보
 _TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 _CHAT_ID = "7733010521"
 
@@ -21,37 +21,25 @@ TICKERS = [
 
 # ✅ RSI 기준값
 RSI_LOW = 40
-RSI_HIGH = 65  # 수정됨
+RSI_HIGH = 65
 
 # ✅ 수동 Max Pain
 MAX_PAIN = {
-    "TSLA": 310,
-    "ORCL": 225,
-    "MSFT": 490,
-    "AMZN": 215,
-    "NVDA": 160,
-    "META": 700,
-    "AAPL": 200,
-    "AVGO": 265,
-    "GOOGL": 177.5,
-    "PSTG": 55,
-    "SYM": 43,
-    "TSM": 225,
-    "ASML": 790,
-    "AMD": 140,
-    "ARM": 145
+    "TSLA": 310, "ORCL": 225, "MSFT": 490, "AMZN": 215, "NVDA": 160,
+    "META": 700, "AAPL": 200, "AVGO": 265, "GOOGL": 177.5, "PSTG": 55,
+    "SYM": 43, "TSM": 225, "ASML": 790, "AMD": 140, "ARM": 145
 }
 
-# ✅ 템레그램 메시지 전송 함수
+# ✅ 텔레그램 메시지 전송 함수
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{_TOKEN}/sendMessage"
     payload = {"chat_id": _CHAT_ID, "text": text}
     try:
         response = requests.post(url, json=payload)
         if not response.ok:
-            print(f"❌ 템레그램 전송 실패: {response.text}")
+            print(f"❌ 텔레그램 전송 실패: {response.text}")
     except Exception as e:
-        print(f"❌ 템레그램 전송 오류: {e}")
+        print(f"❌ 텔레그램 전송 오류: {e}")
 
 # ✅ RSI 계산 함수
 def get_rsi(close_prices, period=14):
@@ -70,6 +58,7 @@ def check_alerts():
         try:
             df = yf.download(ticker, period="21d", interval="1d", progress=False)
             if df.empty:
+                print(f"⚠️ {ticker} 데이터 없음")
                 continue
 
             df.dropna(inplace=True)
@@ -78,6 +67,7 @@ def check_alerts():
             rsi_series = get_rsi(close)
 
             if rsi_series.isna().iloc[-1]:
+                print(f"⚠️ {ticker} RSI 계산 불가 (NaN)")
                 continue
 
             rsi = rsi_series.iloc[-1]
@@ -85,6 +75,8 @@ def check_alerts():
             ma20 = close.rolling(20).mean().iloc[-1]
             volume_today = volume.iloc[-1]
             volume_ma5 = volume.rolling(5).mean().iloc[-1]
+
+            print(f"🔍 {ticker} - RSI: {rsi:.2f} / 현재가: ${price:.2f} / MA20: ${ma20:.2f}")
 
             alerts = []
 
@@ -105,10 +97,11 @@ def check_alerts():
                     alerts.append(f"💀 체산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
 
             if volume_today > volume_ma5 * 2:
-                alerts.append(f"🔥 거래량 깊란: {volume_today:,} / 평균 {volume_ma5:,.0f}")
+                alerts.append(f"🔥 거래량 급등: {volume_today:,} / 평균 {volume_ma5:,.0f}")
 
             if alerts:
                 msg = f"🔍 [{ticker}] 감지됨\n" + "\n".join(alerts)
+                print(msg)
                 send_telegram_message(msg)
 
         except Exception as e:
@@ -125,5 +118,5 @@ def ping():
     else:
         return f"[{now}] Ping OK - 자동 전송 X"
 
-# ✅ gunicorn 시키기 로그 설정
+# ✅ 로그 설정
 logging.basicConfig(level=logging.INFO)
