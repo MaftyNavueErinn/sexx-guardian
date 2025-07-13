@@ -42,7 +42,7 @@ MAX_PAIN = {
     "ARM": 145
 }
 
-# ✅ 텔레그램 메시지 전송
+# ✅ 텔레그램 메시지 전송 함수
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{_TOKEN}/sendMessage"
     payload = {"chat_id": _CHAT_ID, "text": text}
@@ -97,14 +97,14 @@ def check_alerts():
             elif price < ma20:
                 alerts.append(f"📉 MA20 이탈 (${ma20:.2f})")
 
-            # Max Pain 대비 ±5% 이상 → 청산각
+            # Max Pain 기준 청산각
             max_pain = MAX_PAIN.get(ticker)
             if max_pain:
                 gap_percent = abs(price - max_pain) / max_pain * 100
                 if gap_percent >= 5:
                     alerts.append(f"💀 청산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
 
-            # 거래량 급등
+            # 거래량 급등 (평균의 2배 이상)
             if volume_today > volume_ma5 * 2:
                 alerts.append(f"🔥 거래량 급등: {volume_today:,} / 평균 {volume_ma5:,.0f}")
 
@@ -127,5 +127,5 @@ def ping():
     else:
         return f"[{now}] Ping OK - 자동 전송 X"
 
-# ✅ gunicorn 실행용
+# ✅ gunicorn 실행용 로그 설정
 logging.basicConfig(level=logging.INFO)
