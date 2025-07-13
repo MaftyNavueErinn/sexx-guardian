@@ -32,13 +32,13 @@ def get_stock_signal(ticker):
         if len(df) < 20:
             return f"❌ {ticker} 데이터 부족"
 
-        close_series = df['Close']
-        ma20_series = close_series.rolling(window=20).mean()
-        rsi_series = calculate_rsi(close_series)
+        close = df['Close'].values.reshape(-1)
+        ma20 = pd.Series(close).rolling(window=20).mean().values.reshape(-1)
+        rsi = calculate_rsi(pd.Series(close)).values.reshape(-1)
 
-        current_close = close_series.iloc[-1]
-        current_ma20 = ma20_series.iloc[-1]
-        current_rsi = rsi_series.iloc[-1]
+        current_close = close[-1]
+        current_ma20 = ma20[-1]
+        current_rsi = rsi[-1]
 
         if np.isnan(current_ma20) or np.isnan(current_rsi):
             return f"❌ {ticker} 지표 계산 불가"
@@ -83,3 +83,6 @@ def ping():
         send_telegram_alert(full_message)
 
     return "pong"
+
+if __name__ == "__main__":
+    app.run(debug=True, port=10000)
