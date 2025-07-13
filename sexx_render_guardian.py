@@ -53,7 +53,7 @@ def get_stock_signal(ticker):
         elif current_close > current_ma20:
             message += "🟢 사!!! (MA20 돌파)"
         elif current_close < current_ma20:
-            message += "🔴 팔아!!! (MA20 이탄)"
+            message += "🔴 팔아!!! (MA20 운지)"
         else:
             message += "❓ 관마관"
 
