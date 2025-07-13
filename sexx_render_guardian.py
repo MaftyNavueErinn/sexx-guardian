@@ -9,121 +9,97 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ 텔레그램 정보
-_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
-_CHAT_ID = "7733010521"
+# Telegram 설정
+TOKEN = "<YOUR_TELEGRAM_BOT_TOKEN>"
+CHAT_ID = "<YOUR_CHAT_ID>"
 
-# ✅ 감시 종목
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message}
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"텔레그램 전송 오류: {e}")
+
+# 감시 종목
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-# ✅ RSI 기준값
-RSI_LOW = 40
-RSI_HIGH = 65
-
-# ✅ 수동 Max Pain
+# Max Pain 예시 (수동 입력)
 MAX_PAIN = {
-    "TSLA": 310,
-    "ORCL": 225,
-    "MSFT": 490,
-    "AMZN": 215,
-    "NVDA": 160,
-    "META": 700,
-    "AAPL": 200,
-    "AVGO": 265,
-    "GOOGL": 177.5,
-    "PSTG": 55,
-    "SYM": 43,
-    "TSM": 225,
-    "ASML": 790,
-    "AMD": 140,
-    "ARM": 145
+    "TSLA": 315, "ORCL": 125, "MSFT": 450, "AMZN": 190, "NVDA": 130,
+    "META": 530, "AAPL": 220, "AVGO": 270, "GOOGL": 180, "PSTG": 65,
+    "SYM": 52, "TSM": 185, "ASML": 1200, "AMD": 155, "ARM": 160
 }
 
-# ✅ 텔레그램 메시지 전송 함수
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{_TOKEN}/sendMessage"
-    payload = {"chat_id": _CHAT_ID, "text": text}
-    try:
-        response = requests.post(url, json=payload)
-        if not response.ok:
-            print(f"❌ 텔레그램 전송 실패: {response.text}")
-    except Exception as e:
-        print(f"❌ 텔레그램 전송 오류: {e}")
-
-# ✅ RSI 계산 함수
-def get_rsi(close_prices, period=14):
-    delta = close_prices.diff()
-    up = delta.clip(lower=0)
-    down = -delta.clip(upper=0)
-    ema_up = up.ewm(com=period - 1, adjust=False).mean()
-    ema_down = down.ewm(com=period - 1, adjust=False).mean()
-    rs = ema_up / ema_down
+def calculate_rsi(df, period=14):
+    delta = df["Close"].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ✅ 알림 체크 함수
-def check_alerts():
-    for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="21d", interval="1d", progress=False, auto_adjust=True)
-            if df.empty:
-                continue
+def check_conditions(ticker, df):
+    try:
+        rsi = calculate_rsi(df).iloc[-1]
+        close = df["Close"].iloc[-1]
+        ma20 = df["Close"].rolling(window=20).mean().iloc[-1]
+        max_pain = MAX_PAIN.get(ticker, None)
 
-            df.dropna(inplace=True)
-            close = df["Close"]
-            volume = df["Volume"]
-            rsi_series = get_rsi(close)
+        alert_triggered = False
+        reasons = []
 
-            if rsi_series.isna().iloc[-1]:
-                continue
+        if rsi > 65:
+            reasons.append("📈 RSI 과매수")
+            alert_triggered = True
+        elif rsi < 40:
+            reasons.append("📉 RSI 과매도")
+            alert_triggered = True
 
-            price = float(close.iloc[-1])
-            ma20 = float(close.rolling(20).mean().iloc[-1])
-            volume_today = float(volume.iloc[-1])
-            volume_ma5 = float(volume.rolling(5).mean().iloc[-1])
-            rsi = float(rsi_series.iloc[-1])
+        if close > ma20:
+            reasons.append("🔼 MA20 돌파")
+            alert_triggered = True
+        elif close < ma20:
+            reasons.append("🔽 MA20 이탈")
+            alert_triggered = True
 
-            alerts = []
+        if max_pain:
+            gap = abs(close - max_pain) / max_pain * 100
+            if gap >= 5:
+                reasons.append(f"🎯 MaxPain 괴리 {gap:.1f}%")
+                alert_triggered = True
 
-            if rsi < RSI_LOW:
-                alerts.append(f"⚠️ RSI 과매도 ({rsi:.2f})")
-            elif rsi > RSI_HIGH:
-                alerts.append(f"🚨 RSI 과매수 ({rsi:.2f})")
+        return alert_triggered, reasons, rsi, close, ma20
+    except Exception as e:
+        print(f"❌ {ticker} 조건 체크 오류: {e}")
+        return False, [], None, None, None
 
-            if price > ma20:
-                alerts.append(f"📈 MA20 돌파 (${ma20:.2f})")
-            elif price < ma20:
-                alerts.append(f"📉 MA20 이탈 (${ma20:.2f})")
-
-            max_pain = MAX_PAIN.get(ticker)
-            if max_pain:
-                gap_percent = abs(price - max_pain) / max_pain * 100
-                if gap_percent >= 5:
-                    alerts.append(f"💀 체산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
-
-            if volume_today > volume_ma5 * 2:
-                alerts.append(f"🔥 거래량 급등: {volume_today:,.0f} / 평균 {volume_ma5:,.0f}")
-
-            if alerts:
-                msg = f"🔍 [{ticker}] 감지됨\n" + "\n".join(alerts)
-                send_telegram_message(msg)
-
-        except Exception as e:
-            print(f"❌ {ticker} 오류: {e}")
-
-# ✅ /ping 엔드포인트
-@app.route('/ping')
+@app.route("/ping")
 def ping():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if request.args.get("run") == "1":
+    run_flag = request.args.get("run")
+    if run_flag == "1":
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         send_telegram_message(f"🔔 감시 시작됨: {now}")
-        check_alerts()
-        return f"[{now}] Ping OK - 감시 완료"
-    else:
-        return f"[{now}] Ping OK - 자동 전송 X"
+        for ticker in TICKERS:
+            try:
+                df = yf.download(ticker, period="20d", interval="1d", progress=False)
+                if df.empty:
+                    continue
+                alert, reasons, rsi, close, ma20 = check_conditions(ticker, df)
+                if alert:
+                    msg = f"🚨 {ticker} 조건 충족\n"
+                    msg += f"종가: {close:.2f} / MA20: {ma20:.2f} / RSI: {rsi:.2f}\n"
+                    msg += "\n".join(reasons)
+                    send_telegram_message(msg)
+            except Exception as e:
+                print(f"❌ {ticker} 오류: {e}")
+        return "OK"
+    return "Ping only"
 
-# ✅ 로그 설정
-logging.basicConfig(level=logging.INFO)
+if __name__ == "__main__":
+    app.run(debug=True, port=10000)
