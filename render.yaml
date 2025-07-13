@@ -4,5 +4,5 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn sexx_render_guardian:app --bind 0.0.0.0:10000
+    startCommand: gunicorn sexx_render_guardian_FIXED_FINAL_VER:app --bind 0.0.0.0:10000
     autoDeploy: true
