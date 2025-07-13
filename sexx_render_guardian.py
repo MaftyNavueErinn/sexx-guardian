@@ -19,61 +19,66 @@ TICKERS = [
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {"chat_id": TG_CHAT_ID, "text": message}
-    try:
-        requests.post(url, data=data)
-    except Exception as e:
-        print(f"텔레그램 전송 오류: {e}")
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    requests.post(url, data=payload)
 
-def calculate_rsi(close_prices, period=14):
-    delta = close_prices.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    avg_gain = pd.Series(gain).rolling(window=period).mean()
+    avg_loss = pd.Series(loss).rolling(window=period).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def check_conditions():
-    messages = [f"\ud83d\udce1 \uc870\uac74 \ucda9\ucd09 \uc885\ubaa9 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"]
-    for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False)[["Close"]]
-            df = df.dropna()
-            df["RSI"] = calculate_rsi(df["Close"])
-            df["MA20"] = df["Close"].rolling(window=20).mean()
-            latest = df.iloc[-1]
-            close = latest["Close"]
-            ma20 = latest["MA20"]
-            rsi = latest["RSI"]
+def analyze_ticker(ticker):
+    try:
+        df = yf.download(ticker, period="20d", interval="1d", progress=False)["Close"]
+        df = df.dropna()
+        if len(df) < 20:
+            return f"⚠️ {ticker}: 데이터 부족"
 
-            status = []
-            # 우선순위 분기: RSI > 65이면 무조건 "팔아!!!"
-            if rsi > 65:
-                status.append("\ud83d\udd34 \ud314\uc544!!! (RSI>65)")
-            elif rsi < 40:
-                status.append("\ud83d\udfe2 \uc0ac!!! (RSI<40)")
-            elif close > ma20:
-                status.append("\ud83d\udfe2 \uc0ac!!! (MA20 \ub3cc\ud30c)")
-            elif close < ma20:
-                status.append("\ud83d\udd34 \ud314\uc544!!! (MA20 \uc774\ud0c8)")
+        close_price = df.iloc[-1]
+        ma20 = df.rolling(window=20).mean().iloc[-1]
+        rsi = calculate_rsi(df).iloc[-1]
 
-            if status:
-                msg = f"\n\ud83d\udcc8 {ticker}\n\uc885\uac00: ${close:.2f} / MA20: ${ma20:.2f} / RSI: {rsi:.2f}\n" + "\n".join(status)
-                messages.append(msg)
-        except Exception as e:
-            messages.append(f"\u274c {ticker} \ucc98\ub9ac \uc911 \uc5d0\ub7ec: {str(e)}")
+        signal = f"\n<b>\U0001F4C8 {ticker}</b>"
+        signal += f"\n종가: ${close_price:.2f} / MA20: ${ma20:.2f} / RSI: {rsi:.2f}"
 
-    final_message = "\n".join(messages)
-    send_telegram_alert(final_message)
+        # RSI 조건 우선 적용
+        if rsi > 65:
+            signal += f"\n🔴 <b>팔아!!!</b> (RSI>65)"
+        elif rsi < 35:
+            signal += f"\n🟢 <b>사!!!</b> (RSI<35)"
+        elif close_price > ma20:
+            signal += f"\n🟢 <b>사!!!</b> (MA20 돌파)"
+        elif close_price < ma20:
+            signal += f"\n🔴 <b>팔아!!!</b> (MA20 이탈)"
+
+        return signal
+
+    except Exception as e:
+        return f"❌ {ticker} 처리 중 에러: {str(e)}"
 
 @app.route("/ping")
 def ping():
-    if request.args.get("run") == "1":
-        check_conditions()
-        return "\uc870\uac74 \ud310\ubc95 \uc644\ub8cc"
-    return "pong"
+    run = request.args.get("run")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    messages = [f"\U0001F4E1 조건 충족 종목 ({now})"]
 
-if __name__ == "__main__":
-    app.run(debug=True, port=10000)
+    for ticker in TICKERS:
+        result = analyze_ticker(ticker)
+        messages.append(result)
+
+    # 한 덩어리로 묶어서 전송
+    full_message = "\n".join(messages)
+
+    if run == "1":
+        send_telegram_alert(full_message)
+
+    return "Ping Success!"
