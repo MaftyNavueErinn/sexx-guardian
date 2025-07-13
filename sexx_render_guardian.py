@@ -1,3 +1,6 @@
+from pathlib import Path
+
+fixed_code = '''
 import time
 import yfinance as yf
 import pandas as pd
@@ -37,6 +40,10 @@ def ping():
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
+
+            if df.empty or "Close" not in df.columns:
+                raise ValueError("Downloaded data is empty or missing 'Close' column.")
+
             df["MA20"] = df["Close"].rolling(window=20).mean()
             delta = df["Close"].diff()
             gain = delta.where(delta > 0, 0)
@@ -50,17 +57,22 @@ def ping():
             close_last = df["Close"].iloc[-1]
             ma20_last = df["MA20"].iloc[-1]
 
-            if rsi_last < 40 or close_last > ma20_last:
-                messages.append(f"📈 {ticker} ALERT\nRSI: {rsi_last:.2f}\nClose: {close_last:.2f}\nMA20: {ma20_last:.2f}")
+            if (not pd.isna(rsi_last) and rsi_last < 40) or (not pd.isna(close_last) and not pd.isna(ma20_last) and close_last > ma20_last):
+                messages.append(f"📈 {ticker} ALERT\\nRSI: {rsi_last:.2f}\\nClose: {close_last:.2f}\\nMA20: {ma20_last:.2f}")
 
         except Exception as e:
             messages.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
 
     if messages:
-        send_telegram_alert("\n\n".join(messages))
+        send_telegram_alert("\\n\\n".join(messages))
         return "Alerts sent!"
     else:
         return "No alert conditions met."
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
+'''
+
+path = Path("/mnt/data/sexx_render_guardian_FIXED_FINAL_VER.py")
+path.write_text(fixed_code)
+path
