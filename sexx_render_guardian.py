@@ -24,61 +24,59 @@ def send_telegram_alert(message):
         "text": message,
         "parse_mode": "HTML"
     }
-    requests.post(url, data=payload)
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
+def calculate_rsi(close, period=14):
+    delta = close.diff()
     gain = np.where(delta > 0, delta, 0)
     loss = np.where(delta < 0, -delta, 0)
     avg_gain = pd.Series(gain).rolling(window=period).mean()
     avg_loss = pd.Series(loss).rolling(window=period).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-def analyze_ticker(ticker):
-    try:
-        df = yf.download(ticker, period="20d", interval="1d", progress=False)["Close"]
-        df = df.dropna()
-        if len(df) < 20:
-            return f"⚠️ {ticker}: 데이터 부족"
-
-        close_price = df.iloc[-1]
-        ma20 = df.rolling(window=20).mean().iloc[-1]
-        rsi = calculate_rsi(df).iloc[-1]
-
-        signal = f"\n<b>\U0001F4C8 {ticker}</b>"
-        signal += f"\n종가: ${close_price:.2f} / MA20: ${ma20:.2f} / RSI: {rsi:.2f}"
-
-        # RSI 조건 우선 적용
-        if rsi > 65:
-            signal += f"\n🔴 <b>팔아!!!</b> (RSI>65)"
-        elif rsi < 35:
-            signal += f"\n🟢 <b>사!!!</b> (RSI<35)"
-        elif close_price > ma20:
-            signal += f"\n🟢 <b>사!!!</b> (MA20 돌파)"
-        elif close_price < ma20:
-            signal += f"\n🔴 <b>팔아!!!</b> (MA20 이탈)"
-
-        return signal
-
-    except Exception as e:
-        return f"❌ {ticker} 처리 중 에러: {str(e)}"
+    return pd.Series(rsi, index=close.index)
 
 @app.route("/ping")
 def ping():
-    run = request.args.get("run")
+    run_param = request.args.get("run")
+    if run_param != "1":
+        return "pong"
+
+    alerts = []
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    messages = [f"\U0001F4E1 조건 충족 종목 ({now})"]
+    alerts.append(f"\ud83d\udce1 \uc870\uac74 \ucda9\uc870 \uc885\ubaa9 ({now})")
 
     for ticker in TICKERS:
-        result = analyze_ticker(ticker)
-        messages.append(result)
+        try:
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            df.dropna(inplace=True)
+            close = df['Close']
+            rsi = calculate_rsi(close)
+            ma20 = close.rolling(window=20).mean()
 
-    # 한 덩어리로 묶어서 전송
-    full_message = "\n".join(messages)
+            latest_close = close.iloc[-1]
+            latest_ma20 = ma20.iloc[-1]
+            latest_rsi = rsi.iloc[-1]
 
-    if run == "1":
-        send_telegram_alert(full_message)
+            decisions = []
+            if latest_rsi < 35:
+                decisions.append("\ud83d\udd35 \uc0b4\uc544!!! (RSI<35)")
+            elif latest_rsi > 65:
+                decisions.append("\ud83d\udd34 \ud314\uc544!!! (RSI>65)")
 
-    return "Ping Success!"
+            if latest_close > latest_ma20 and latest_rsi <= 65:
+                decisions.append("\ud83d\udd35 \uc0b4\uc544!!! (MA20 \ub3cc\ud30c)")
+            elif latest_close < latest_ma20 and latest_rsi > 35:
+                decisions.append("\ud83d\udd34 \ud314\uc544!!! (MA20 \uc774\ud0c8)")
+
+            if decisions:
+                alert_text = f"\ud83d\udcc8 {ticker}\n\uc885\uac00: ${latest_close:.2f} / MA20: ${latest_ma20:.2f} / RSI: {latest_rsi:.2f}\n" + "\n".join(decisions)
+                alerts.append(alert_text)
+        except Exception as e:
+            alerts.append(f"\u274c {ticker} \ucc98\ub9ac \uc911 \uc5d0\ub7ec: {e}")
+
+    send_telegram_alert("\n\n".join(alerts))
+    return "alert sent"
