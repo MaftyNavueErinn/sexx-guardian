@@ -9,7 +9,7 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ 텔레그램 정보
+# ✅ 템레그램 정보
 _TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 _CHAT_ID = "7733010521"
 
@@ -21,7 +21,7 @@ TICKERS = [
 
 # ✅ RSI 기준값
 RSI_LOW = 40
-RSI_HIGH = 70
+RSI_HIGH = 65  # 수정됨
 
 # ✅ 수동 Max Pain
 MAX_PAIN = {
@@ -42,16 +42,16 @@ MAX_PAIN = {
     "ARM": 145
 }
 
-# ✅ 텔레그램 메시지 전송 함수
+# ✅ 템레그램 메시지 전송 함수
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{_TOKEN}/sendMessage"
     payload = {"chat_id": _CHAT_ID, "text": text}
     try:
         response = requests.post(url, json=payload)
         if not response.ok:
-            print(f"❌ 텔레그램 전송 실패: {response.text}")
+            print(f"❌ 템레그램 전송 실패: {response.text}")
     except Exception as e:
-        print(f"❌ 텔레그램 전송 오류: {e}")
+        print(f"❌ 템레그램 전송 오류: {e}")
 
 # ✅ RSI 계산 함수
 def get_rsi(close_prices, period=14):
@@ -68,14 +68,19 @@ def get_rsi(close_prices, period=14):
 def check_alerts():
     for ticker in TICKERS:
         try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            df = yf.download(ticker, period="21d", interval="1d", progress=False)
             if df.empty:
                 continue
-            df.dropna(inplace=True)
 
+            df.dropna(inplace=True)
             close = df["Close"]
             volume = df["Volume"]
-            rsi = get_rsi(close).iloc[-1]
+            rsi_series = get_rsi(close)
+
+            if rsi_series.isna().iloc[-1]:
+                continue
+
+            rsi = rsi_series.iloc[-1]
             price = close.iloc[-1]
             ma20 = close.rolling(20).mean().iloc[-1]
             volume_today = volume.iloc[-1]
@@ -83,32 +88,25 @@ def check_alerts():
 
             alerts = []
 
-            # RSI 과매도
             if rsi < RSI_LOW:
                 alerts.append(f"⚠️ RSI 과매도 ({rsi:.2f})")
-
-            # RSI 과매수
-            if rsi > RSI_HIGH:
+            elif rsi > RSI_HIGH:
                 alerts.append(f"🚨 RSI 과매수 ({rsi:.2f})")
 
-            # MA20 돌파 / 이탈
             if price > ma20:
                 alerts.append(f"📈 MA20 돌파 (${ma20:.2f})")
             elif price < ma20:
                 alerts.append(f"📉 MA20 이탈 (${ma20:.2f})")
 
-            # Max Pain 기준 청산각
             max_pain = MAX_PAIN.get(ticker)
             if max_pain:
                 gap_percent = abs(price - max_pain) / max_pain * 100
                 if gap_percent >= 5:
-                    alerts.append(f"💀 청산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
+                    alerts.append(f"💀 체산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
 
-            # 거래량 급등 (평균의 2배 이상)
             if volume_today > volume_ma5 * 2:
-                alerts.append(f"🔥 거래량 급등: {volume_today:,} / 평균 {volume_ma5:,.0f}")
+                alerts.append(f"🔥 거래량 깊란: {volume_today:,} / 평균 {volume_ma5:,.0f}")
 
-            # 알림 전송
             if alerts:
                 msg = f"🔍 [{ticker}] 감지됨\n" + "\n".join(alerts)
                 send_telegram_message(msg)
@@ -127,5 +125,5 @@ def ping():
     else:
         return f"[{now}] Ping OK - 자동 전송 X"
 
-# ✅ gunicorn 실행용 로그 설정
+# ✅ gunicorn 시키기 로그 설정
 logging.basicConfig(level=logging.INFO)
