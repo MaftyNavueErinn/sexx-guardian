@@ -17,76 +17,74 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": TG_CHAT_ID, "text": message}
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        print(f"텔레그램 전송 오류: {e}")
+        print("텔레그램 전송 실패:", e)
 
+def check_rsi_ma_conditions(ticker):
+    try:
+        df = yf.download(ticker, period="20d", interval="1d", progress=False)
+        if df.empty:
+            return None
 
-def get_rsi(close, period=14):
-    delta = close.diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
+        close = df["Close"]
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
 
-    avg_gain = pd.Series(gain).rolling(window=period).mean()
-    avg_loss = pd.Series(loss).rolling(window=period).mean()
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
 
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return pd.Series(rsi, index=close.index)
+        ma20 = close.rolling(window=20).mean()
 
+        last_rsi = rsi.iloc[-1]
+        last_close = close.iloc[-1]
+        last_ma20 = ma20.iloc[-1]
+
+        # Debug 로그 출력
+        print(f"[DEBUG] {ticker} - RSI: {last_rsi:.2f}, Close: {last_close:.2f}, MA20: {last_ma20:.2f}")
+
+        # 값이 NaN이면 조건문 안탐
+        if np.isnan(last_rsi) or np.isnan(last_close) or np.isnan(last_ma20):
+            return None
+
+        # 조건 검사
+        if last_rsi < 35 and last_close < last_ma20:
+            return f"✅ {ticker} - 존나 사!! (RSI={last_rsi:.1f}, 종가<{last_ma20:.2f})"
+        elif last_rsi > 65 and last_close > last_ma20:
+            return f"🚨 {ticker} - 씨발 팔아!! (RSI={last_rsi:.1f}, 종가>{last_ma20:.2f})"
+        else:
+            return None
+
+    except Exception as e:
+        return f"❌ {ticker} 처리 중 에러: {str(e)}"
 
 @app.route("/ping")
 def ping():
-    run = request.args.get("run", "0") == "1"
-    alert_msgs = []
+    run_flag = request.args.get("run")
+    if run_flag != "1":
+        return "Ping OK (no run)"
+
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    alerts = []
 
     for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            df.dropna(inplace=True)
+        result = check_rsi_ma_conditions(ticker)
+        if result:
+            alerts.append(result)
 
-            if len(df) < 15:
-                alert_msgs.append(f"⚠️ {ticker}: 데이터 부족")
-                continue
-
-            close = df['Close']
-            rsi = get_rsi(close)
-            ma20 = close.rolling(window=20).mean()
-
-            latest_rsi = rsi.iloc[-1]
-            latest_close = close.iloc[-1]
-            latest_ma20 = ma20.iloc[-1]
-
-            msg = f"{ticker}: RSI={latest_rsi:.2f}, 종가={latest_close:.2f}, MA20={latest_ma20:.2f}"
-
-            if latest_rsi < 40 and latest_close < latest_ma20:
-                alert_msgs.append(f"📉 [<b>사!!</b>] {ticker} 진입 타점 감지됨\n{msg}")
-            elif latest_rsi > 65 and latest_close > latest_ma20:
-                alert_msgs.append(f"📈 [<b>팔아!!</b>] {ticker} 청산 타점 감지됨\n{msg}")
-            else:
-                print(f"🔍 {ticker}: 조건 불충족")
-
-        except Exception as e:
-            alert_msgs.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
-
-    if run and alert_msgs:
-        full_msg = f"🚨 <b>타점 알림 ({now})</b> 🚨\n\n" + "\n\n".join(alert_msgs)
-        send_telegram_alert(full_msg)
-    elif run:
-        send_telegram_alert(f"🔍 조건 충족 종목 없음. {now}")
-
-    return "pong"
-
+    if alerts:
+        message = f"📡 조건 충족 종목 ({now})\n" + "\n".join(alerts)
+        send_telegram_alert(message)
+        return message
+    else:
+        return f"🔍 조건 충족 종목 없음. {now}"
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=10000)
+    app.run(host="0.0.0.0", port=10000)
