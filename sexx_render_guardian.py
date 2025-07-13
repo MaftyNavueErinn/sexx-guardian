@@ -17,8 +17,8 @@ TICKERS = [
 
 def calculate_rsi(prices, window=14):
     delta = prices.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
     avg_gain = gain.rolling(window=window).mean()
     avg_loss = loss.rolling(window=window).mean()
     rs = avg_gain / avg_loss
@@ -27,7 +27,7 @@ def calculate_rsi(prices, window=14):
 
 def get_stock_signal(ticker):
     try:
-        df = yf.download(ticker, period="2d", interval="5m", progress=False)
+        df = yf.download(ticker, period="5d", interval="5m", progress=False)
         df.dropna(inplace=True)
         if len(df) < 20:
             return f"❌ {ticker} 데이터 부족"
@@ -40,7 +40,7 @@ def get_stock_signal(ticker):
         current_ma20 = ma20.iloc[-1]
         current_rsi = rsi.iloc[-1]
 
-        if pd.isna(current_ma20) or pd.isna(current_rsi):
+        if np.isnan(current_ma20) or np.isnan(current_rsi):
             return f"❌ {ticker} 지표 계산 불가"
 
         message = f"\n\n📈 {ticker}\n"
@@ -53,7 +53,7 @@ def get_stock_signal(ticker):
         elif current_close > current_ma20:
             message += "🟢 사!!! (MA20 돌파)"
         elif current_close < current_ma20:
-            message += "🔴 팔아!!! (MA20 운지)"
+            message += "🔴 팔아!!! (MA20 이탈)"
         else:
             message += "❓ 관망각"
 
@@ -73,7 +73,7 @@ def send_telegram_alert(message):
 def ping():
     run_alert = request.args.get("run", default="0") == "1"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"📡 조건 충족 종목 ({now})"
+    full_message = f"\U0001F4E1 조건 충족 종목 ({now})"
 
     for ticker in TICKERS:
         result = get_stock_signal(ticker)
