@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python sexx_render_guardian_modified.py
+    startCommand: gunicorn sexx_render_guardian_modified:app --bind 0.0.0.0:10000
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         value: 7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ
