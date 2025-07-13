@@ -1,7 +1,11 @@
 from pathlib import Path
+import os
 
-# 맥스페인 제거 + RSI 과매수(>65) + MA20 이탈(<MA20) 포함해서 수정된 코드
-code = """
+# 디렉토리 먼저 생성 (존재하지 않으면)
+os.makedirs("/mnt/data", exist_ok=True)
+
+# 수정된 코드 저장
+code = '''
 import time
 import yfinance as yf
 import pandas as pd
@@ -95,7 +99,7 @@ def ping():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
-"""
+'''
 
 path = Path("/mnt/data/sexx_render_guardian.py")
 path.write_text(code)
