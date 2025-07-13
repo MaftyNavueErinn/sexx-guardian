@@ -48,8 +48,8 @@ def get_stock_signal(ticker):
 
         if current_rsi > 65:
             message += "🔴 팔아!!! (RSI>65)"
-        elif current_rsi < 35:
-            message += "🟢 사!!! (RSI<35)"
+        elif current_rsi < 40:
+            message += "🟢 사!!! (RSI<40)"
         elif current_close > current_ma20:
             message += "🟢 사!!! (MA20 돌파)"
         elif current_close < current_ma20:
