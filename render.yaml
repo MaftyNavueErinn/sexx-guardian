@@ -4,10 +4,5 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn sexx_render_guardian_modified:app --bind 0.0.0.0:10000
-    envVars:
-      - key: TELEGRAM_BOT_TOKEN
-        value: 7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ
-      - key: TELEGRAM_CHAT_ID
-        value: 7733010521
+    startCommand: gunicorn sexx_render_guardian:app --bind 0.0.0.0:10000
     autoDeploy: true
