@@ -27,24 +27,24 @@ def calculate_rsi(prices, window=14):
 
 def get_stock_signal(ticker):
     try:
-        df = yf.download(ticker, period="5d", interval="5m", progress=False)
+        df = yf.download(ticker, period="20d", interval="1d", progress=False)
         df.dropna(inplace=True)
         if len(df) < 20:
             return f"❌ {ticker} 데이터 부족"
 
-        close = df['Close']
-        ma20 = close.rolling(window=20).mean()
-        rsi = calculate_rsi(close)
+        close_series = df['Close']
+        ma20_series = close_series.rolling(window=20).mean()
+        rsi_series = calculate_rsi(close_series)
 
-        current_close = close.iloc[-1]
-        current_ma20 = ma20.iloc[-1]
-        current_rsi = rsi.iloc[-1]
+        current_close = close_series.iloc[-1]
+        current_ma20 = ma20_series.iloc[-1]
+        current_rsi = rsi_series.iloc[-1]
 
         if np.isnan(current_ma20) or np.isnan(current_rsi):
             return f"❌ {ticker} 지표 계산 불가"
 
         message = f"\n\n📈 {ticker}\n"
-        message += f"실시간가: ${current_close:.2f} / MA20: ${current_ma20:.2f} / RSI: {current_rsi:.2f}\n"
+        message += f"종가: ${current_close:.2f} / MA20: ${current_ma20:.2f} / RSI: {current_rsi:.2f}\n"
 
         if current_rsi > 65:
             message += "🔴 팔아!!! (RSI>65)"
@@ -53,7 +53,7 @@ def get_stock_signal(ticker):
         elif current_close > current_ma20:
             message += "🟢 사!!! (MA20 돌파)"
         elif current_close < current_ma20:
-            message += "🔴 팔아!!! (MA20 이탈)"
+            message += "🔴 팔아!!! (MA20 운지)"
         else:
             message += "❓ 관망각"
 
@@ -73,7 +73,7 @@ def send_telegram_alert(message):
 def ping():
     run_alert = request.args.get("run", default="0") == "1"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"\U0001F4E1 조건 충족 종목 ({now})"
+    full_message = f"📡 조건 충족 종목 ({now})"
 
     for ticker in TICKERS:
         result = get_stock_signal(ticker)
@@ -83,6 +83,3 @@ def ping():
         send_telegram_alert(full_message)
 
     return "pong"
-
-if __name__ == "__main__":
-    app.run(debug=True, port=10000)
