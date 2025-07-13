@@ -1,7 +1,3 @@
-from pathlib import Path
-
-# 완전 수정된 sexx_render_guardian.py 코드 (Series 비교 에러 해결 포함)
-code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -10,7 +6,6 @@ from flask import Flask, request
 from datetime import datetime
 import logging
 import requests
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -22,86 +17,65 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message
-    }
+    payload = {"chat_id": TG_CHAT_ID, "text": message}
     try:
-        response = requests.post(url, json=payload)
-        return response
+        requests.post(url, data=payload)
     except Exception as e:
-        print(f"텔레그램 전송 실패: {e}")
-        return None
+        print("텔레그램 전송 오류:", e)
+
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+
+    avg_gain = gain.rolling(window=period, min_periods=period).mean()
+    avg_loss = loss.rolling(window=period, min_periods=period).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def get_rsi_ma_signals():
+    signals = []
+    for ticker in TICKERS:
+        try:
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            df.dropna(inplace=True)
+            df["RSI"] = calculate_rsi(df["Close"])
+            df["MA20"] = df["Close"].rolling(window=20).mean()
+
+            latest = df.iloc[-1]
+            rsi = latest["RSI"]
+            close = latest["Close"]
+            ma20 = latest["MA20"]
+
+            overbought = rsi > 70
+            oversold = rsi < 35
+            ma20_cross_up = close > ma20 and df["Close"].iloc[-2] < df["MA20"].iloc[-2]
+            ma20_cross_down = close < ma20 and df["Close"].iloc[-2] > df["MA20"].iloc[-2]
+
+            if oversold or ma20_cross_up:
+                signals.append(f"🟢 {ticker} 진입각 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
+            elif overbought or ma20_cross_down:
+                signals.append(f"🔴 {ticker} 과열 경고 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
+        except Exception as e:
+            print(f"{ticker} 오류: {e}")
+    return signals
 
 @app.route("/ping")
 def ping():
-    run_check = request.args.get("run") == "1"
-    if not run_check:
-        return "Ping received. Append ?run=1 to execute."
-
-    messages = []
-
-    for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="20d", interval="1d", progress=False, auto_adjust=False)
-
-            if df.empty or len(df) < 20:
-                messages.append(f"⚠️ {ticker} 데이터 부족")
-                continue
-
-            df["MA20"] = df["Close"].rolling(window=20).mean()
-            delta = df["Close"].diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            avg_gain = gain.rolling(window=14).mean()
-            avg_loss = loss.rolling(window=14).mean()
-            rs = avg_gain / avg_loss
-            df["RSI"] = 100 - (100 / (1 + rs))
-
-            rsi_last = df["RSI"].iloc[-1]
-            close_last = df["Close"].iloc[-1]
-            ma20_last = df["MA20"].iloc[-1]
-
-            alert_triggered = False
-            message = f"📊 {ticker} 분석 결과\\n"
-
-            if pd.notna(rsi_last) and rsi_last < 35:
-                message += f"🟡 RSI 과매도: {rsi_last:.2f}\\n"
-                alert_triggered = True
-            elif pd.notna(rsi_last) and rsi_last > 65:
-                message += f"🔴 RSI 과매수: {rsi_last:.2f}\\n"
-                alert_triggered = True
-
-            if pd.notna(close_last) and pd.notna(ma20_last):
-                if close_last > ma20_last:
-                    message += f"🟢 종가 > MA20 돌파: {close_last:.2f} > {ma20_last:.2f}\\n"
-                    alert_triggered = True
-                elif close_last < ma20_last:
-                    message += f"🔻 종가 < MA20 이탈: {close_last:.2f} < {ma20_last:.2f}\\n"
-                    alert_triggered = True
-
-            if alert_triggered:
-                messages.append(message)
-
-        except Exception as e:
-            messages.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
-
-    if messages:
-        send_telegram_alert("\\n\\n".join(messages))
-        return "Alerts sent!"
-    else:
-        return "No alert conditions met."
+    if request.args.get("run") == "1":
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        signals = get_rsi_ma_signals()
+        if signals:
+            msg = f"📈 감시 트리거 발생! ({now})\n\n" + "\n".join(signals)
+            send_telegram_alert(msg)
+        else:
+            print(f"{now} - 조건 만족 종목 없음.")
+        return "Ping executed"
+    return "Ping OK"
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=10000)
-"""
-
-# 저장
-path = Path("/mnt/data/sexx_render_guardian.py")
-path.write_text(code)
-path
-
+    app.run(debug=True)
