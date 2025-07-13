@@ -25,9 +25,21 @@ RSI_HIGH = 65
 
 # ✅ 수동 Max Pain
 MAX_PAIN = {
-    "TSLA": 310, "ORCL": 225, "MSFT": 490, "AMZN": 215, "NVDA": 160,
-    "META": 700, "AAPL": 200, "AVGO": 265, "GOOGL": 177.5, "PSTG": 55,
-    "SYM": 43, "TSM": 225, "ASML": 790, "AMD": 140, "ARM": 145
+    "TSLA": 310,
+    "ORCL": 225,
+    "MSFT": 490,
+    "AMZN": 215,
+    "NVDA": 160,
+    "META": 700,
+    "AAPL": 200,
+    "AVGO": 265,
+    "GOOGL": 177.5,
+    "PSTG": 55,
+    "SYM": 43,
+    "TSM": 225,
+    "ASML": 790,
+    "AMD": 140,
+    "ARM": 145
 }
 
 # ✅ 텔레그램 메시지 전송 함수
@@ -56,9 +68,8 @@ def get_rsi(close_prices, period=14):
 def check_alerts():
     for ticker in TICKERS:
         try:
-            df = yf.download(ticker, period="21d", interval="1d", progress=False)
+            df = yf.download(ticker, period="21d", interval="1d", progress=False, auto_adjust=True)
             if df.empty:
-                print(f"⚠️ {ticker} 데이터 없음")
                 continue
 
             df.dropna(inplace=True)
@@ -67,16 +78,13 @@ def check_alerts():
             rsi_series = get_rsi(close)
 
             if rsi_series.isna().iloc[-1]:
-                print(f"⚠️ {ticker} RSI 계산 불가 (NaN)")
                 continue
 
-            rsi = rsi_series.iloc[-1]
-            price = close.iloc[-1]
-            ma20 = close.rolling(20).mean().iloc[-1]
-            volume_today = volume.iloc[-1]
-            volume_ma5 = volume.rolling(5).mean().iloc[-1]
-
-            print(f"🔍 {ticker} - RSI: {rsi:.2f} / 현재가: ${price:.2f} / MA20: ${ma20:.2f}")
+            price = float(close.iloc[-1])
+            ma20 = float(close.rolling(20).mean().iloc[-1])
+            volume_today = float(volume.iloc[-1])
+            volume_ma5 = float(volume.rolling(5).mean().iloc[-1])
+            rsi = float(rsi_series.iloc[-1])
 
             alerts = []
 
@@ -97,11 +105,10 @@ def check_alerts():
                     alerts.append(f"💀 체산각: MaxPain ${max_pain:.2f} / 현재가 ${price:.2f}")
 
             if volume_today > volume_ma5 * 2:
-                alerts.append(f"🔥 거래량 급등: {volume_today:,} / 평균 {volume_ma5:,.0f}")
+                alerts.append(f"🔥 거래량 급등: {volume_today:,.0f} / 평균 {volume_ma5:,.0f}")
 
             if alerts:
                 msg = f"🔍 [{ticker}] 감지됨\n" + "\n".join(alerts)
-                print(msg)
                 send_telegram_message(msg)
 
         except Exception as e:
