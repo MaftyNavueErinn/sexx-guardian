@@ -1,11 +1,7 @@
 from pathlib import Path
-import os
 
-# 디렉토리 먼저 생성 (존재하지 않으면)
-os.makedirs("/mnt/data", exist_ok=True)
-
-# 수정된 코드 저장
-code = '''
+# 최종 배포용 - 파일 저장 로직 완전히 제거한 버전
+final_code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -99,8 +95,8 @@ def ping():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
-'''
+"""
 
 path = Path("/mnt/data/sexx_render_guardian.py")
-path.write_text(code)
+path.write_text(final_code)
 path
