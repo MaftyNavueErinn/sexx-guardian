@@ -23,7 +23,7 @@ def send_telegram_alert(message):
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        print("텔레그램 전송 오류:", e)
+        print("\ud1b5\uc2e0 \ecec\x9eec\x9e\x90\ubaa9 \uc804\uc1a1 \uc624\ub958:", e)
 
 def calculate_rsi(series, period=14):
     delta = series.diff()
@@ -59,7 +59,7 @@ def get_rsi_ma_signals():
             if oversold or ma20_cross_up:
                 signals.append(f"🟢 {ticker} 진입각 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
             elif overbought or ma20_cross_down:
-                signals.append(f"🔴 {ticker} 과열 경고 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
+                signals.append(f"🔴 {ticker} 과엽 경고 (RSI={rsi:.2f}, Close={close:.2f}, MA20={ma20:.2f})")
         except Exception as e:
             print(f"{ticker} 오류: {e}")
     return signals
@@ -73,7 +73,7 @@ def ping():
             msg = f"📈 감시 트리거 발생! ({now})\n\n" + "\n".join(signals)
             send_telegram_alert(msg)
         else:
-            print(f"{now} - 조건 만족 종목 없음.")
+            print(f"{now} - 조건 마출 종목 없음.")
         return "Ping executed"
     return "Ping OK"
 
