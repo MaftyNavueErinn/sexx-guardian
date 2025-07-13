@@ -7,19 +7,22 @@ from datetime import datetime
 import time
 import warnings
 
-# ⚠️ FutureWarning 제거
+# 경고 제거 (yfinance auto_adjust 경고 무시)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 app = Flask(__name__)
 
+# 텔레그램 정보
 TG_TOKEN = "7641333408:AAFe0wDhUZnALhVuoWosu0GFdDgDqXi3yGQ"
 TG_CHAT_ID = "7733010521"
 
+# 감시 대상 종목
 TICKERS = [
     "TSLA", "ORCL", "MSFT", "AMZN", "NVDA", "META", "AAPL",
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
+# RSI 계산
 def calculate_rsi(prices, window=14):
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).fillna(0)
@@ -30,9 +33,10 @@ def calculate_rsi(prices, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+# 개별 종목 분석
 def get_stock_signal(ticker):
     try:
-        time.sleep(1.2)  # ✅ Render 서버 부하 방지
+        time.sleep(1.2)  # 서버 보호용 딜레이
 
         df = yf.download(ticker, period="20d", interval="1d", progress=False)
         df.dropna(inplace=True)
@@ -68,6 +72,7 @@ def get_stock_signal(ticker):
     except Exception as e:
         return f"❌ {ticker} 처리 중 에러: {str(e)}"
 
+# 텔레그램 발송 함수
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {
@@ -76,6 +81,7 @@ def send_telegram_alert(message):
     }
     requests.post(url, data=payload)
 
+# 핑 엔드포인트
 @app.route("/ping")
 def ping():
     run_alert = request.args.get("run", default="0") == "1"
@@ -89,7 +95,8 @@ def ping():
     if run_alert:
         send_telegram_alert(full_message)
 
-    return "pong"
+    return "pong"  # ✅ cron-job.org 실패 방지용 최소 응답
 
+# 로컬 실행 시 포트 설정
 if __name__ == "__main__":
     app.run(debug=True, port=10000)
