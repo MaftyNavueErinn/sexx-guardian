@@ -1,11 +1,9 @@
-import time
+from flask import Flask, request
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from flask import Flask, request
-from datetime import datetime
-import logging
 import requests
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -17,66 +15,78 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
+def calculate_rsi(prices, window=14):
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def get_stock_signal(ticker):
+    try:
+        df = yf.download(ticker, period="2d", interval="5m", progress=False)
+        df.dropna(inplace=True)
+        if len(df) < 50:
+            return f"❌ {ticker} 데이터 부족"
+
+        close = df['Close']
+        ma20 = close.rolling(window=20).mean()
+        rsi = calculate_rsi(close)
+
+        current_close = close.iloc[-1]
+        current_ma20 = ma20.iloc[-1]
+        current_rsi = rsi.iloc[-1]
+
+        if np.isnan(current_ma20) or np.isnan(current_rsi):
+            return f"❌ {ticker} 지표 계산 불가"
+
+        message = f"\n\n📈 {ticker}\n"
+        message += f"실시간가: ${current_close:.2f} / MA20: ${current_ma20:.2f} / RSI: {current_rsi:.2f}\n"
+
+        if current_rsi > 65:
+            message += "🔴 팔아!!! (RSI>65)"
+        elif current_rsi < 40:
+            message += "🟢 사!!! (RSI<40)"
+        elif current_close > current_ma20:
+            message += "🟢 사!!! (MA20 돌파)"
+        elif current_close < current_ma20:
+            message += "🔴 팔아!!! (MA20 운지)"
+        else:
+            message += "❓ 관망각"
+
+        return message
+    except Exception as e:
+        return f"❌ {ticker} 처리 중 에러: {str(e)}"
 
 def send_telegram_alert(message):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": TG_CHAT_ID, "text": message}
     try:
+        safe_message = message.encode('utf-8', 'ignore').decode('utf-8')
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TG_CHAT_ID,
+            "text": safe_message
+        }
         requests.post(url, data=payload)
     except Exception as e:
         print("텔레그램 전송 에러:", e)
 
-
-def calculate_rsi(data, period=14):
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-
 @app.route("/ping")
 def ping():
-    run_param = request.args.get("run")
-    if run_param != "1":
-        return "pong"
-
+    run_alert = request.args.get("run", default="0") == "1"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    alert_message = f"\n\ud83d\udce1 \uc870\uac74 \ucda9\ucd08 \uc885\ubaa9 ({now})\n"
+    full_message = f"📡 조건 충족 종목 ({now})"
 
     for ticker in TICKERS:
-        try:
-            df = yf.download(ticker, period="5d", interval="5m", progress=False)
-            if df.empty:
-                alert_message += f"\u274c {ticker} \ub370\uc774\ud130 \uc5c6\uc74c\n"
-                continue
+        result = get_stock_signal(ticker)
+        full_message += f"\n{result}"
 
-            close = df["Close"]
-            ma20 = close.rolling(window=20).mean()
-            rsi = calculate_rsi(close)
+    if run_alert:
+        send_telegram_alert(full_message)
 
-            last_close = close.iloc[-1]
-            last_ma20 = ma20.iloc[-1]
-            last_rsi = rsi.iloc[-1]
-
-            status = ""
-            if last_rsi > 65:
-                status = "\ud83d\udd34 \ud314\uc544!!! (RSI>65)"
-            elif last_close > last_ma20:
-                status = "\ud83d\udfe2 \uc0ac!!! (MA20 \ub3cc\ud30c)"
-            elif last_rsi < 35:
-                status = "\ud83d\udfe2 \uc0ac!!! (RSI<35)"
-            elif last_close < last_ma20:
-                status = "\ud83d\udd34 \ud314\uc544!!! (MA20 \uc774\ud0c4)"
-
-            alert_message += f"\n\ud83d\udcc8 {ticker}\n\uc885\uac00: ${last_close:.2f} / MA20: ${last_ma20:.2f} / RSI: {last_rsi:.2f}\n{status}\n"
-
-        except Exception as e:
-            alert_message += f"\u274c {ticker} \ucc98\ub9ac \uc911 \uc5d0\ub7ec: {str(e)}\n"
-
-    send_telegram_alert(alert_message)
-    return "done"
-
+    return "pong"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, port=10000)
