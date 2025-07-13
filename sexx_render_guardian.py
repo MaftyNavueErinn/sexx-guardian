@@ -1,3 +1,5 @@
+# 수정된 코드 (ndarray 오류 해결)
+
 import time
 import yfinance as yf
 import pandas as pd
@@ -19,72 +21,59 @@ TICKERS = [
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": TG_CHAT_ID, "text": message}
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print("텔레그램 전송 실패:", e)
+    data = {"chat_id": TG_CHAT_ID, "text": message}
+    requests.post(url, data=data)
 
-def check_rsi_ma_conditions(ticker):
-    try:
-        df = yf.download(ticker, period="20d", interval="1d", progress=False)
-        if df.empty:
-            return None
-
-        close = df["Close"]
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-
-        avg_gain = gain.rolling(window=14).mean()
-        avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-
-        ma20 = close.rolling(window=20).mean()
-
-        last_rsi = rsi.iloc[-1]
-        last_close = close.iloc[-1]
-        last_ma20 = ma20.iloc[-1]
-
-        # Debug 로그 출력
-        print(f"[DEBUG] {ticker} - RSI: {last_rsi:.2f}, Close: {last_close:.2f}, MA20: {last_ma20:.2f}")
-
-        # 값이 NaN이면 조건문 안탐
-        if np.isnan(last_rsi) or np.isnan(last_close) or np.isnan(last_ma20):
-            return None
-
-        # 조건 검사
-        if last_rsi < 35 and last_close < last_ma20:
-            return f"✅ {ticker} - 존나 사!! (RSI={last_rsi:.1f}, 종가<{last_ma20:.2f})"
-        elif last_rsi > 65 and last_close > last_ma20:
-            return f"🚨 {ticker} - 씨발 팔아!! (RSI={last_rsi:.1f}, 종가>{last_ma20:.2f})"
-        else:
-            return None
-
-    except Exception as e:
-        return f"❌ {ticker} 처리 중 에러: {str(e)}"
+def calculate_rsi(data, period=14):
+    delta = data.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 @app.route("/ping")
 def ping():
-    run_flag = request.args.get("run")
+    run_flag = request.args.get("run", "0")
     if run_flag != "1":
-        return "Ping OK (no run)"
+        return "Ping received"
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     alerts = []
-
     for ticker in TICKERS:
-        result = check_rsi_ma_conditions(ticker)
-        if result:
-            alerts.append(result)
+        try:
+            df = yf.download(ticker, period="20d", interval="1d", progress=False)
+            if df.empty or len(df) < 20:
+                alerts.append(f"⚠ {ticker} 데이터 부족")
+                continue
+
+            close = df['Close'].astype(float)
+            ma20 = close.rolling(window=20).mean()
+            rsi = calculate_rsi(close)
+
+            current_close = close.iloc[-1]
+            current_ma20 = ma20.iloc[-1]
+            current_rsi = rsi.iloc[-1]
+
+            status = None
+            if current_rsi < 35 and current_close < current_ma20:
+                status = "📉 사!! (저점 타점)"
+            elif current_rsi > 65 and current_close > current_ma20:
+                status = "📈 팔아!! (고점 타점)"
+
+            if status:
+                alerts.append(f"{ticker}: {status} (RSI={current_rsi:.2f}, MA20={current_ma20:.2f}, Close={current_close:.2f})")
+
+        except Exception as e:
+            alerts.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
 
     if alerts:
-        message = f"📡 조건 충족 종목 ({now})\n" + "\n".join(alerts)
-        send_telegram_alert(message)
-        return message
-    else:
-        return f"🔍 조건 충족 종목 없음. {now}"
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        alert_msg = f"\n🚨 타점 알림 ({now}) 🚨\n\n" + "\n".join(alerts)
+        send_telegram_alert(alert_msg)
+
+    return "완료"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True)
