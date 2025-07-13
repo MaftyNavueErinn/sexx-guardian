@@ -1,4 +1,4 @@
-# Create the updated version of the script with the provided Telegram token and chat ID
+# Save the final version of the script as 'sexx_render_guardian.py' in the accessible directory
 
 code = '''
 import time
@@ -90,7 +90,8 @@ if __name__ == "__main__":
     app.run(debug=True, port=5000)
 '''
 
-with open("/mnt/data/sexx_render_guardian.py", "w") as f:
+file_path = "/mnt/data/sexx_render_guardian.py"
+with open(file_path, "w") as f:
     f.write(code)
 
-"/mnt/data/sexx_render_guardian.py"
+file_path
