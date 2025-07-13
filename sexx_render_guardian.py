@@ -1,7 +1,3 @@
-from pathlib import Path
-
-# 수정된 코드 내용을 sexx_render_guardian.py로 저장
-code = """
 import time
 import yfinance as yf
 import pandas as pd
@@ -27,8 +23,12 @@ def send_telegram_alert(message):
         "chat_id": TG_CHAT_ID,
         "text": message
     }
-    response = requests.post(url, json=payload)
-    return response
+    try:
+        response = requests.post(url, json=payload)
+        return response
+    except Exception as e:
+        print(f"텔레그램 전송 실패: {e}")
+        return None
 
 @app.route("/ping")
 def ping():
@@ -59,23 +59,18 @@ def ping():
             close_last = df["Close"].iloc[-1]
             ma20_last = df["MA20"].iloc[-1]
 
-            if (pd.notna(rsi_last) and rsi_last < 40) or (pd.notna(close_last) and pd.notna(ma20_last) and close_last > ma20_last):
-                messages.append(f"📈 {ticker} ALERT\\nRSI: {rsi_last:.2f}\\nClose: {close_last:.2f}\\nMA20: {ma20_last:.2f}")
+            if (pd.notna(rsi_last) and rsi_last < 40) or \
+               (pd.notna(close_last) and pd.notna(ma20_last) and close_last > ma20_last):
+                messages.append(f"📈 {ticker} ALERT\nRSI: {rsi_last:.2f}\nClose: {close_last:.2f}\nMA20: {ma20_last:.2f}")
 
         except Exception as e:
             messages.append(f"❌ {ticker} 처리 중 에러: {str(e)}")
 
     if messages:
-        send_telegram_alert("\\n\\n".join(messages))
+        send_telegram_alert("\n\n".join(messages))
         return "Alerts sent!"
     else:
         return "No alert conditions met."
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
-"""
-
-# 저장 경로 및 파일명 지정
-path = Path("/mnt/data/sexx_render_guardian.py")
-path.write_text(code)
-path
