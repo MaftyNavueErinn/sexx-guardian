@@ -17,70 +17,63 @@ TICKERS = [
     "AVGO", "GOOGL", "PSTG", "SYM", "TSM", "ASML", "AMD", "ARM"
 ]
 
-
 def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": message
+    }
     try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        payload = {"chat_id": TG_CHAT_ID, "text": message}
         requests.post(url, json=payload)
     except Exception as e:
-        logging.error(f"텔레그램 전송 실패: {e}")
+        print(f"텔레그램 전송 오류: {e}")
 
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 @app.route("/ping")
 def ping():
-    run_flag = request.args.get("run")
-    if run_flag != "1":
-        return "pong"
-
-    results = []
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    triggered = []
 
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period="20d", interval="1d", progress=False)
-            if df.empty or len(df) < 20:
-                raise ValueError("데이터 부족")
+            df = df.dropna()
 
-            close = df["Close"]
-            delta = close.diff()
-            gain = np.where(delta > 0, delta, 0)
-            loss = np.where(delta < 0, -delta, 0)
+            if df.empty or len(df) < 15:
+                print(f"❌ {ticker} 데이터 부족")
+                continue
 
-            avg_gain = pd.Series(gain).rolling(window=14).mean()
-            avg_loss = pd.Series(loss).rolling(window=14).mean()
-            rs = avg_gain / avg_loss
-            rsi = 100 - (100 / (1 + rs))
-
+            close = df['Close']
             ma20 = close.rolling(window=20).mean()
+            rsi = calculate_rsi(close)
 
-            last_close = close.iloc[-1]
-            last_ma20 = ma20.iloc[-1]
-            last_rsi = rsi.iloc[-1]
+            latest_close = close.iloc[-1]
+            latest_ma20 = ma20.iloc[-1]
+            latest_rsi = rsi.iloc[-1]
 
-            signals = []
-
-            if last_rsi > 65:
-                signals.append("\U0001F534 팔아!!! (RSI>65)")
-            elif last_rsi < 35:
-                signals.append("\U0001F7E2 사!!! (RSI<35)")
-            else:
-                signals.append("- RSI 평범")
-
-            if last_close > last_ma20:
-                signals.append("\U0001F7E2 사!!! (MA20 돌파)")
-            elif last_close < last_ma20:
-                signals.append("\U0001F534 팔아!!! (MA20 이탈)")
-            else:
-                signals.append("- MA20 근처")
-
-            result = f"\n\U0001F4C8 {ticker}\n종가: ${last_close:.2f} / MA20: ${last_ma20:.2f} / RSI: {last_rsi:.2f}\n" + "\n".join(signals)
-            results.append(result)
+            if latest_rsi < 40 or latest_close > latest_ma20:
+                triggered.append((ticker, latest_close, latest_rsi, latest_ma20))
 
         except Exception as e:
-            results.append(f"\n❌ {ticker} 처리 중 에러: {e}")
+            print(f"❌ {ticker} 처리 중 에러: {e}")
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"\U0001F4E1 조건 충족 종목 ({now})" + "".join(results)
-    send_telegram_alert(full_message)
+    if triggered:
+        alert = f"\n\n📡 조건 충족 종목 ({now})\n"
+        for t, c, r, m in triggered:
+            alert += f"✅ {t} | 종가: ${c:.2f} | RSI: {r:.2f} | MA20: {m:.2f}\n"
+    else:
+        alert = f"\n\n📡 조건 충족 종목 없음 ({now})"
 
+    print(alert)
+    send_telegram_alert(alert)
     return "pong"
+
+if __name__ == "__main__":
+    app.run(debug=False, host="0.0.0.0", port=10000)
